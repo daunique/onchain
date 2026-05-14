@@ -1,9 +1,9 @@
-web3==6.15.1
-python-telegram-bot==20.7
 requests==2.31.0
 flask==3.0.2
 flask-cors==4.0.0
-apscheduler==3.10.4
 python-dotenv==1.0.1
+apscheduler==3.10.4
 aiohttp==3.9.3
-asyncio==3.4.3
+websockets==12.0
+numpy==1.26.4
+scipy==1.12.0
