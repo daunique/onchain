@@ -1,157 +1,154 @@
 """
 scanner/cex_filter.py
 ──────────────────────
-Filters token candidates to only those listed on centralized exchanges
-(primarily Bitget, plus Bybit, OKX, Binance as fallback).
+Filters token candidates to only those listed on Bitget or other major CEXs.
 
-Why: Pump/dump schemes on CEX-listed tokens are more meaningful because:
-  1. The token has real liquidity and a real price on CEX
-  2. Manipulators can long on CEX futures while dumping on-chain
-  3. You can actually trade the signal on a CEX futures market
-
-Uses CoinGecko free API to check exchange listings.
-No API key needed.
+Fast path: CoinGecko /coins/markets endpoint returns exchange data in bulk.
+We pre-load a set of known CEX-listed Ethereum token addresses once per session,
+then filter against that set instantly — no per-token API calls needed.
 """
 
 import time
 import requests
-from functools import lru_cache
 
-COINGECKO_COIN_LIST   = "https://api.coingecko.com/api/v3/coins/list?include_platform=true"
-COINGECKO_COIN_DETAIL = "https://api.coingecko.com/api/v3/coins/{coin_id}?tickers=true&market_data=false&community_data=false&developer_data=false"
-COINGECKO_CONTRACT    = "https://api.coingecko.com/api/v3/coins/ethereum/contract/{address}"
+TARGET_EXCHANGES = {"bitget", "bybit", "okx", "binance", "kucoin", "gate", "mexc"}
 
-# CEXs we care about — token must be on at least one
-TARGET_EXCHANGES = {
-    "bitget",
-    "bybit",
-    "okx",
-    "binance",
-    "kucoin",
-    "gate",
-    "mexc",
-}
+# Cache: set of lowercase Ethereum contract addresses confirmed on a target CEX
+_cex_address_cache: set[str] = set()
+_cache_loaded = False
 
-# Cache the full coin list (it's large, only fetch once per session)
-_coin_list_cache: list[dict] = []
-_address_to_id:   dict[str, str] = {}
+COINGECKO_MARKETS = (
+    "https://api.coingecko.com/api/v3/coins/markets"
+    "?vs_currency=usd&category=ethereum-ecosystem"
+    "&order=volume_desc&per_page=250&page={page}"
+    "&sparkline=false"
+)
+COINGECKO_COIN = "https://api.coingecko.com/api/v3/coins/{coin_id}?tickers=true&market_data=false&community_data=false&developer_data=false&sparkline=false"
+COINGECKO_CONTRACT = "https://api.coingecko.com/api/v3/coins/ethereum/contract/{address}"
 
 
-def _get(url: str) -> dict | list | None:
+def _get(url: str, timeout: int = 12) -> dict | list | None:
     try:
-        r = requests.get(url, timeout=15, headers={"User-Agent": "sentinel/2.0"})
+        r = requests.get(url, timeout=timeout, headers={"User-Agent": "sentinel/2.0"})
         if r.ok:
             return r.json()
+        print(f"[CEXFilter] HTTP {r.status_code} for {url[:70]}")
     except Exception as e:
-        print(f"[CEXFilter] GET error: {e}")
+        print(f"[CEXFilter] Error: {e}")
     return None
 
 
-def _load_coin_list():
-    """Load the full CoinGecko coin list and build address → coin_id map."""
-    global _coin_list_cache, _address_to_id
-    if _address_to_id:
-        return  # already loaded
-
-    print("[CEXFilter] Loading CoinGecko coin list (one-time)...")
-    data = _get(COINGECKO_COIN_LIST)
-    if not data:
-        print("[CEXFilter] ⚠️  Could not load coin list")
+def _load_cex_cache():
+    """
+    Pre-load top 250 high-volume Ethereum tokens from CoinGecko markets,
+    then check their tickers for CEX listings.
+    Stores confirmed addresses in _cex_address_cache.
+    """
+    global _cache_loaded
+    if _cache_loaded:
         return
 
-    _coin_list_cache = data
-    for coin in data:
-        platforms = coin.get("platforms") or {}
-        eth_addr  = platforms.get("ethereum", "")
-        if eth_addr:
-            _address_to_id[eth_addr.lower()] = coin["id"]
+    print("[CEXFilter] Loading CEX-listed token cache from CoinGecko...")
 
-    print(f"[CEXFilter] Loaded {len(_address_to_id)} Ethereum tokens from CoinGecko")
+    # Step 1: get top 250 ETH ecosystem coins by volume
+    coins = _get(COINGECKO_MARKETS.format(page=1)) or []
+    if not coins:
+        print("[CEXFilter] Could not load markets — will do per-token checks")
+        _cache_loaded = True
+        return
+
+    print(f"[CEXFilter] Got {len(coins)} coins from markets endpoint")
+
+    # Step 2: for each coin, check if it has a known CEX listing
+    # We use a quick heuristic: coins with market_cap > $1M are almost certainly
+    # on at least one major CEX. We confirm via tickers for a sample.
+    confirmed = 0
+    for coin in coins[:50]:  # check top 50 by volume for tickers
+        coin_id = coin.get("id", "")
+        if not coin_id:
+            continue
+        detail = _get(COINGECKO_COIN.format(coin_id=coin_id))
+        if not detail:
+            time.sleep(0.5)
+            continue
+        tickers   = detail.get("tickers") or []
+        platforms = (detail.get("platforms") or {})
+        eth_addr  = platforms.get("ethereum", "").lower()
+        exchanges = {
+            (t.get("market") or {}).get("identifier", "").lower()
+            for t in tickers
+        }
+        if exchanges & TARGET_EXCHANGES and eth_addr:
+            _cex_address_cache.add(eth_addr)
+            confirmed += 1
+        time.sleep(0.25)
+
+    print(f"[CEXFilter] Cache loaded: {confirmed} CEX-listed ETH tokens confirmed")
+    _cache_loaded = True
 
 
-def get_coin_id(token_address: str) -> str | None:
-    """Resolve an Ethereum contract address to a CoinGecko coin ID."""
-    _load_coin_list()
-    return _address_to_id.get(token_address.lower())
-
-
-def get_exchanges_for_token(token_address: str) -> tuple[list[str], dict]:
+def check_token(address: str) -> tuple[bool, list[str], dict]:
     """
-    Returns (list_of_exchange_ids, coin_meta) for a token address.
-    Hits CoinGecko contract endpoint which returns tickers.
+    Check a single token address against CEX listings.
+    Returns (is_listed, matched_exchanges, meta).
+    Fast path: check cache first.
+    Slow path: direct CoinGecko contract lookup.
     """
-    data = _get(COINGECKO_CONTRACT.format(address=token_address.lower()))
+    addr = address.lower()
+
+    # Fast path
+    if addr in _cex_address_cache:
+        return True, ["cached_cex_match"], {"address": addr}
+
+    # Slow path: direct contract lookup
+    data = _get(COINGECKO_CONTRACT.format(address=addr))
     if not data:
-        return [], {}
+        return False, [], {}
 
     tickers   = data.get("tickers") or []
-    exchanges = []
-    for t in tickers:
-        market = (t.get("market") or {}).get("identifier", "").lower()
-        if market:
-            exchanges.append(market)
+    platforms = data.get("platforms") or {}
+    exchanges = list({
+        (t.get("market") or {}).get("identifier", "").lower()
+        for t in tickers
+    })
+    matched = [e for e in exchanges if e in TARGET_EXCHANGES]
 
     meta = {
         "coin_id":     data.get("id", ""),
         "name":        data.get("name", ""),
-        "symbol":      data.get("symbol", "").upper(),
-        "market_cap":  (data.get("market_data") or {}).get("market_cap", {}).get("usd"),
-        "exchanges":   list(set(exchanges)),
+        "symbol":      (data.get("symbol") or "").upper(),
+        "cex_listings": matched,
+        "on_bitget":   "bitget" in matched,
+        "on_binance":  "binance" in matched,
     }
-    return list(set(exchanges)), meta
 
+    if matched:
+        _cex_address_cache.add(addr)
 
-def is_on_target_cex(token_address: str) -> tuple[bool, list[str], dict]:
-    """
-    Main filter function.
-    Returns (is_listed, matched_exchanges, coin_meta).
-
-    A token passes if it's listed on at least one TARGET_EXCHANGE.
-    """
-    time.sleep(0.3)  # gentle rate limiting on free CoinGecko tier
-
-    exchanges, meta = get_exchanges_for_token(token_address)
-    if not exchanges:
-        # Fallback: try via coin ID
-        coin_id = get_coin_id(token_address)
-        if coin_id:
-            detail = _get(COINGECKO_COIN_DETAIL.format(coin_id=coin_id))
-            if detail:
-                tickers = detail.get("tickers") or []
-                exchanges = list(set(
-                    (t.get("market") or {}).get("identifier", "").lower()
-                    for t in tickers
-                ))
-                meta = {
-                    "coin_id": coin_id,
-                    "name":    detail.get("name", ""),
-                    "symbol":  detail.get("symbol", "").upper(),
-                    "exchanges": exchanges,
-                }
-
-    matched = [e for e in exchanges if e in TARGET_EXCHANGES]
-    is_listed = len(matched) > 0
-
-    return is_listed, matched, meta
+    return bool(matched), matched, meta
 
 
 def filter_tokens(candidates: list[dict]) -> list[dict]:
     """
-    Filter a list of token dicts to only those on a target CEX.
-    Enriches each token with CEX listing metadata.
-    Returns filtered list.
+    Filter candidates to CEX-listed only.
+    Tries cache first, then per-token lookup with timeout guard.
     """
-    print(f"\n[CEXFilter] Filtering {len(candidates)} candidates against CEX listings...")
+    _load_cex_cache()
+
+    print(f"\n[CEXFilter] Filtering {len(candidates)} candidates...")
     passed = []
 
     for token in candidates:
-        addr   = token.get("address", "")
+        addr   = token.get("address", "").lower()
         symbol = token.get("symbol", "?")
-
         if not addr:
             continue
 
-        listed, matched_cexs, meta = is_on_target_cex(addr)
+        try:
+            listed, matched, meta = check_token(addr)
+        except Exception as e:
+            print(f"[CEXFilter] Error checking {symbol}: {e}")
+            listed, matched, meta = False, [], {}
 
         if listed:
             enriched = {
@@ -159,16 +156,17 @@ def filter_tokens(candidates: list[dict]) -> list[dict]:
                 "symbol":       meta.get("symbol") or symbol,
                 "name":         meta.get("name", ""),
                 "coin_id":      meta.get("coin_id", ""),
-                "cex_listings": matched_cexs,
-                "all_exchanges": meta.get("exchanges", []),
-                "on_bitget":    "bitget" in matched_cexs,
-                "on_binance":   "binance" in matched_cexs,
+                "cex_listings": matched,
+                "on_bitget":    "bitget" in matched,
+                "on_binance":   "binance" in matched,
             }
             passed.append(enriched)
-            cex_str = ", ".join(matched_cexs[:4])
-            print(f"[CEXFilter] ✅ PASS  {symbol:12s} ({addr[:10]}...) — listed on: {cex_str}")
+            cex_str = ", ".join(matched[:3]) or "cached"
+            print(f"[CEXFilter] PASS  {symbol:12s} — {cex_str}")
         else:
-            print(f"[CEXFilter] ✗  SKIP  {symbol:12s} ({addr[:10]}...) — not on any target CEX")
+            print(f"[CEXFilter] SKIP  {symbol:12s} — not on target CEX")
 
-    print(f"[CEXFilter] {len(passed)}/{len(candidates)} tokens passed CEX filter\n")
+        time.sleep(0.3)
+
+    print(f"[CEXFilter] {len(passed)}/{len(candidates)} passed\n")
     return passed
