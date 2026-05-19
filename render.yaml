@@ -35,5 +35,7 @@ services:
         value: "medium"
       - key: DASHBOARD_PORT
         value: "5000"
+      - key: PYTHONUNBUFFERED
+        value: "1"
       - key: PYTHON_VERSION
         value: "3.11.0"

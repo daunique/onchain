@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -e
-python main.py
+export PYTHONUNBUFFERED=1
+python -u main.py
