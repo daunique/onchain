@@ -34,7 +34,7 @@ from dashboard.app         import app
 
 # ── Config ────────────────────────────────────────────────────────────────────
 SCAN_INTERVAL_MIN = int(os.getenv("SCAN_INTERVAL_MINUTES", 30))
-DASHBOARD_PORT    = int(os.getenv("DASHBOARD_PORT", 5000))
+DASHBOARD_PORT    = int(os.getenv("PORT", os.getenv("DASHBOARD_PORT", "5000")))
 
 alerter = TelegramAlerter()
 

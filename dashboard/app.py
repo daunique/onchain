@@ -70,5 +70,5 @@ def dashboard(path=""):
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("DASHBOARD_PORT", 5000))
+    port = int(os.getenv("PORT", os.getenv("DASHBOARD_PORT", "5000")))
     app.run(host="0.0.0.0", port=port, debug=False)
