@@ -55,7 +55,7 @@ class TelegramAlerter:
         try:
             r = requests.post(
                 f"{self.base_url}/sendMessage",
-                json={"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"},
+                json={"chat_id": self.chat_id, "text": text},
                 timeout=10,
             )
             ok = r.ok

@@ -49,18 +49,22 @@ DS_TOKEN_PAIRS   = "https://api.dexscreener.com/latest/dex/tokens/"
 DEFILLAMA_ALL    = "https://api.llama.fi/protocols"
 CG_TRENDING      = "https://api.coingecko.com/api/v3/search/trending"
 
-# Rotated each cycle for variety
+# DexScreener search works best with short token name/symbol fragments
+# Multi-word natural language returns nothing — use 1-2 word terms
 SEARCH_QUERIES = [
-    "ethereum new", "eth small cap", "ethereum gem",
-    "ethereum pump", "erc20 new token", "ethereum altcoin",
-    "ethereum micro cap", "eth momentum", "ethereum volatile",
-    "defi ethereum small", "ethereum breakout", "eth unknown",
-    "ethereum lowcap", "erc20 active", "ethereum move",
+    "pepe", "doge", "shib", "floki", "wojak",
+    "ai", "gpt", "agi", "turbo", "based",
+    "trump", "maga", "brett", "andy", "toshi",
+    "mew", "neiro", "ponke", "michi", "cat",
+    "inu", "elon", "moon", "baby", "safe",
+    "chad", "sigma", "monk", "frog", "bonk",
+    "myro", "popcat", "wif", "pengu", "mog",
+    "pnut", "goat", "act", "npc", "turbo",
 ]
 
 # ── HTTP helper ────────────────────────────────────────────────────────────────
 
-def _get(url: str, timeout: int = 12) -> dict | list | None:
+def _get(url: str, timeout: int = 15) -> dict | list | None:
     try:
         r = requests.get(url, timeout=timeout,
                          headers={"User-Agent": "sentinel/2.0"})
@@ -68,7 +72,20 @@ def _get(url: str, timeout: int = 12) -> dict | list | None:
             print(f"[Scanner] 429 skipped: {url[:50]}")
             return None
         if r.ok:
-            return r.json()
+            try:
+                return r.json()
+            except Exception:
+                # Large payload (DeFiLlama) sometimes truncates — try partial parse
+                text = r.text
+                # Find last complete JSON object/array
+                for end in (len(text), len(text) - 100, len(text) - 500):
+                    try:
+                        import json
+                        return json.loads(text[:end].rsplit(",", 1)[0] + "]")
+                    except Exception:
+                        pass
+                print(f"[Scanner] JSON parse failed: {url[:50]}")
+                return None
         if r.status_code != 404:
             print(f"[Scanner] HTTP {r.status_code}: {url[:60]}")
     except Exception as e:
@@ -101,11 +118,11 @@ def _from_dexscreener_boosts() -> list[dict]:
 
 def _from_dexscreener_search() -> list[dict]:
     results = []
-    queries = random.sample(SEARCH_QUERIES, min(5, len(SEARCH_QUERIES)))
+    queries = random.sample(SEARCH_QUERIES, min(10, len(SEARCH_QUERIES)))
     for q in queries:
         data = _get(DS_SEARCH + q.replace(" ", "%20"))
         if data:
-            for p in (data.get("pairs") or [])[:20]:
+            for p in (data.get("pairs") or [])[:25]:
                 if p.get("chainId") != "ethereum":
                     continue
                 base    = p.get("baseToken") or {}
@@ -144,7 +161,10 @@ def _from_defillama_midcap() -> list[dict]:
     Protocols with sudden TVL changes often correlate with token price moves.
     """
     results = []
-    data = _get(DEFILLAMA_ALL, timeout=20)
+    data = _get(DEFILLAMA_ALL, timeout=30)
+    if not data or not isinstance(data, list):
+        # Fallback: try their smaller summary endpoint
+        data = _get("https://api.llama.fi/v2/protocols", timeout=20)
     if not data or not isinstance(data, list):
         print("[Scanner] DeFiLlama: no data")
         return []
