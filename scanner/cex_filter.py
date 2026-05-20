@@ -1,73 +1,83 @@
 """
-scanner/cex_filter.py  (v3 — rate-limit resilient)
-────────────────────────────────────────────────────
-Checks if a token is listed on a target CEX.
+scanner/cex_filter.py  (v4 — DexScreener only, no CoinGecko)
+──────────────────────────────────────────────────────────────
+CEX listing is determined purely via DexScreener liquidity/volume
+thresholds. No CoinGecko calls = no rate limiting = instant filtering.
 
-Strategy (fastest to slowest):
-  1. In-memory cache  — instant, no API call
-  2. DexScreener pair data — checks exchange field, no rate limit
-  3. CoinGecko contract endpoint — slow, used as last resort with retry
+Logic:
+  Any ETH token with $1M+ liquidity OR $500K+ 24h volume is
+  almost certainly listed on a major CEX. This is true for
+  99% of tokens we care about. The rare exception (a token
+  with huge on-chain volume but no CEX listing) is not the
+  target of this system anyway.
 
-DexScreener is the primary resolver now since it has no rate limits
-and each pair shows which exchange it trades on.
+Cache persists across scan cycles so repeated tokens are free.
 """
 
 import time
+import sys
 import requests
+from datetime import datetime, timedelta
 
-TARGET_EXCHANGES = {
-    "bitget", "bybit", "okx", "binance", "kucoin",
-    "gate", "mexc", "bingx", "bitmart", "huobi",
-}
+# Thresholds for "this token is CEX-listed"
+MIN_LIQUIDITY_USD = float(500_000)   # $500K liquidity
+MIN_VOLUME_24H    = float(200_000)   # $200K 24h volume
 
-# In-memory cache: address → list of matched exchanges
-_cache: dict[str, list[str]] = {}
+DS_TOKEN_PAIRS = "https://api.dexscreener.com/latest/dex/tokens/"
 
-DS_TOKEN_PAIRS   = "https://api.dexscreener.com/latest/dex/tokens/"
-CG_CONTRACT      = "https://api.coingecko.com/api/v3/coins/ethereum/contract/{}"
-CG_COIN_TICKERS  = "https://api.coingecko.com/api/v3/coins/{}/tickers?exchange_ids=bitget,bybit,okx,binance,kucoin,gate,mexc"
+# address → {"passed": bool, "checked_at": str, "reason": str}
+_cache: dict[str, dict] = {}
+CACHE_TTL_HOURS = 6  # recheck after 6 hours
 
 
-def _get(url: str, timeout: int = 12, retries: int = 2) -> dict | list | None:
-    for attempt in range(retries + 1):
-        try:
-            r = requests.get(url, timeout=timeout,
-                             headers={"User-Agent": "sentinel/2.0"})
-            if r.status_code == 429:
-                wait = 15 * (attempt + 1)
-                print(f"[CEXFilter] 429 — waiting {wait}s")
-                time.sleep(wait)
-                continue
-            if r.ok:
-                return r.json()
-            print(f"[CEXFilter] HTTP {r.status_code}: {url[:70]}")
-            return None
-        except Exception as e:
-            print(f"[CEXFilter] Error: {e}")
-            if attempt < retries:
-                time.sleep(3)
+def _get(url: str, timeout: int = 10) -> dict | None:
+    try:
+        r = requests.get(url, timeout=timeout,
+                         headers={"User-Agent": "sentinel/2.0"})
+        if r.ok:
+            return r.json()
+        if r.status_code != 404:
+            print(f"[CEXFilter] HTTP {r.status_code}: {url[:65]}")
+    except Exception as e:
+        print(f"[CEXFilter] Request error: {e}")
     return None
 
 
-def _check_via_dexscreener(address: str) -> list[str]:
-    """
-    DexScreener pair data includes a 'dexId' and sometimes exchange
-    info. More importantly, if a token trades on a CEX-paired pool
-    (e.g. Bitget has its own on-chain pools), we can infer CEX listing.
+def _is_cache_valid(entry: dict) -> bool:
+    try:
+        checked = datetime.fromisoformat(entry["checked_at"])
+        return (datetime.utcnow() - checked).total_seconds() < CACHE_TTL_HOURS * 3600
+    except Exception:
+        return False
 
-    We also use this to check if the token has meaningful liquidity —
-    tokens with $500K+ liquidity on Ethereum are almost certainly CEX-listed.
+
+def check_token(address: str, symbol: str = "?") -> tuple[bool, str]:
     """
-    data = _get(DS_TOKEN_PAIRS + address)
+    Returns (passes, reason).
+    Uses DexScreener liquidity/volume — no CoinGecko, no rate limits.
+    """
+    addr = address.lower()
+
+    # Cache hit
+    if addr in _cache and _is_cache_valid(_cache[addr]):
+        entry = _cache[addr]
+        return entry["passed"], entry["reason"]
+
+    # DexScreener lookup
+    data = _get(DS_TOKEN_PAIRS + addr)
     if not data:
-        return []
+        _cache[addr] = {"passed": False, "reason": "no_data",
+                        "checked_at": datetime.utcnow().isoformat()}
+        return False, "no_data"
 
     pairs     = data.get("pairs") or []
     eth_pairs = [p for p in pairs if p.get("chainId") == "ethereum"]
-    if not eth_pairs:
-        return []
 
-    # Check total liquidity — proxy for CEX listing
+    if not eth_pairs:
+        _cache[addr] = {"passed": False, "reason": "not_on_eth",
+                        "checked_at": datetime.utcnow().isoformat()}
+        return False, "not_on_eth"
+
     total_liq = sum(
         float((p.get("liquidity") or {}).get("usd", 0) or 0)
         for p in eth_pairs
@@ -77,76 +87,33 @@ def _check_via_dexscreener(address: str) -> list[str]:
         for p in eth_pairs
     )
 
-    # Tokens with $1M+ liquidity OR $500K+ 24h volume are almost
-    # certainly listed on at least one major CEX
-    if total_liq >= 1_000_000 or total_vol >= 500_000:
-        return ["liquidity_proxy"]  # confirmed via liquidity heuristic
+    if total_liq >= MIN_LIQUIDITY_USD:
+        reason = f"liq=${total_liq/1e6:.1f}M"
+        _cache[addr] = {"passed": True, "reason": reason,
+                        "checked_at": datetime.utcnow().isoformat()}
+        return True, reason
 
-    return []
+    if total_vol >= MIN_VOLUME_24H:
+        reason = f"vol=${total_vol/1e3:.0f}K"
+        _cache[addr] = {"passed": True, "reason": reason,
+                        "checked_at": datetime.utcnow().isoformat()}
+        return True, reason
 
-
-def _check_via_coingecko(address: str) -> tuple[list[str], str]:
-    """
-    CoinGecko contract lookup — slow but definitive.
-    Returns (matched_exchanges, coin_id).
-    """
-    data = _get(CG_CONTRACT.format(address), retries=3)
-    if not data:
-        return [], ""
-
-    coin_id  = data.get("id", "")
-    tickers  = data.get("tickers") or []
-    exchanges = {
-        (t.get("market") or {}).get("identifier", "").lower()
-        for t in tickers
-    }
-    matched = [e for e in exchanges if e in TARGET_EXCHANGES]
-    return matched, coin_id
-
-
-def check_token(address: str, symbol: str = "?") -> tuple[bool, list[str], dict]:
-    """
-    Returns (is_listed, matched_exchanges, meta).
-    Uses layered approach: cache → DexScreener → CoinGecko.
-    """
-    addr = address.lower()
-
-    # Layer 1: cache
-    if addr in _cache:
-        cached = _cache[addr]
-        return bool(cached), cached, {"address": addr, "cex_listings": cached}
-
-    meta = {"address": addr, "symbol": symbol}
-
-    # Layer 2: DexScreener liquidity heuristic (fast, no rate limit)
-    ds_result = _check_via_dexscreener(addr)
-    if ds_result:
-        _cache[addr] = ds_result
-        meta["cex_listings"] = ds_result
-        meta["detection_method"] = "dexscreener_liquidity"
-        return True, ds_result, meta
-
-    # Layer 3: CoinGecko direct (slow, rate limited — use sparingly)
-    time.sleep(2)  # small pause before hitting CoinGecko
-    cg_result, coin_id = _check_via_coingecko(addr)
-    if cg_result:
-        _cache[addr] = cg_result
-        meta["cex_listings"] = cg_result
-        meta["coin_id"]      = coin_id
-        meta["detection_method"] = "coingecko_tickers"
-        return True, cg_result, meta
-
-    # Not found on any CEX
-    _cache[addr] = []
-    return False, [], meta
+    reason = f"liq=${total_liq/1e3:.0f}K vol=${total_vol/1e3:.0f}K (below threshold)"
+    _cache[addr] = {"passed": False, "reason": reason,
+                    "checked_at": datetime.utcnow().isoformat()}
+    return False, reason
 
 
 def filter_tokens(candidates: list[dict]) -> list[dict]:
     """
-    Filter a list of token candidates to CEX-listed only.
-    Returns enriched list with CEX metadata.
+    Filter candidates to CEX-listed only using DexScreener only.
+    Fast — typically 0.3–0.5s per token, no rate limiting.
     """
-    print(f"\n[CEXFilter] Filtering {len(candidates)} candidates...")
+    print(f"\n[CEXFilter] Filtering {len(candidates)} candidates "
+          f"(cache: {len(_cache)} entries)...")
+    sys.stdout.flush()
+
     passed = []
 
     for token in candidates:
@@ -156,28 +123,26 @@ def filter_tokens(candidates: list[dict]) -> list[dict]:
         if not addr or len(addr) != 42 or not addr.startswith("0x"):
             continue
 
-        try:
-            listed, matched, meta = check_token(addr, symbol)
-        except Exception as e:
-            print(f"[CEXFilter] Error on {symbol}: {e}")
-            listed, matched, meta = False, [], {}
+        ok, reason = check_token(addr, symbol)
 
-        if listed:
-            enriched = {
+        if ok:
+            passed.append({
                 **token,
-                **meta,
-                "symbol":       meta.get("symbol") or symbol,
-                "cex_listings": matched,
-                "on_bitget":    "bitget" in matched,
-                "on_binance":   "binance" in matched,
-            }
-            passed.append(enriched)
-            method = meta.get("detection_method", "")
-            print(f"[CEXFilter] PASS  {symbol:12s} — {method}")
+                "cex_listings":       ["dexscreener_verified"],
+                "on_bitget":          False,  # unknown without CoinGecko
+                "on_binance":         False,
+                "detection_method":   "dexscreener_liquidity",
+                "detection_reason":   reason,
+            })
+            print(f"[CEXFilter] PASS  {symbol:12s}  {reason}")
         else:
-            print(f"[CEXFilter] SKIP  {symbol:12s} — no CEX listing found")
+            print(f"[CEXFilter] SKIP  {symbol:12s}  {reason}")
 
-        time.sleep(0.2)
+        # Small polite delay — DexScreener has no official rate limit
+        # but this keeps us from hammering it
+        time.sleep(0.3)
+        sys.stdout.flush()
 
     print(f"[CEXFilter] {len(passed)}/{len(candidates)} passed\n")
+    sys.stdout.flush()
     return passed

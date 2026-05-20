@@ -3,233 +3,159 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Sentinel v2 — Autonomous Monitor</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<title>OnChain Sentinel</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <style>
-:root {
-  --bg0:    #020804;
-  --bg1:    #060d08;
-  --bg2:    #0a1510;
-  --border: #122018;
-  --muted:  #1c3025;
-  --dim:    #3a6048;
-  --text:   #a8d4b8;
-  --bright: #c8f0d8;
-  --green:  #00e664;
-  --lime:   #84ff44;
-  --amber:  #ffaa00;
-  --red:    #ff3355;
-  --cyan:   #00ccaa;
-  --glow:   rgba(0,230,100,0.12);
+:root{
+  --bg0:#020804;--bg1:#060d08;--bg2:#0a1510;
+  --border:#122018;--muted:#1c3025;--dim:#3a6048;
+  --text:#a8d4b8;--bright:#c8f0d8;
+  --green:#00e664;--lime:#84ff44;--amber:#ffaa00;--red:#ff3355;--cyan:#00ccaa;
+  --glow:rgba(0,230,100,.12);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{
-  background:var(--bg0);
-  color:var(--text);
-  font-family:'IBM Plex Mono',monospace;
-  font-size:13px;
-  min-height:100vh;
-  overflow-x:hidden;
-}
+body{background:var(--bg0);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:13px;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:200}
 
-/* CRT scanline overlay */
-body::before{
-  content:'';position:fixed;inset:0;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.08) 2px,rgba(0,0,0,0.08) 4px);
-  pointer-events:none;z-index:200;
-}
-
-/* Ambient glow top */
-body::after{
-  content:'';position:fixed;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent 0%,var(--green) 40%,var(--lime) 60%,transparent 100%);
-  animation:topline 6s ease-in-out infinite;z-index:201;
-}
-@keyframes topline{0%,100%{opacity:.4}50%{opacity:1}}
-
-/* ── Header ── */
-header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:14px 28px;
-  border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(0,230,100,.04) 0%,transparent);
-  position:sticky;top:0;z-index:50;
-  backdrop-filter:blur(4px);
-}
-.logo{display:flex;align-items:center;gap:14px}
-.logo-mark{
-  width:32px;height:32px;border:1px solid var(--green);border-radius:4px;
-  display:grid;place-items:center;font-size:14px;
-  box-shadow:0 0 16px var(--glow);
-  animation:logopulse 4s ease-in-out infinite;
-}
-@keyframes logopulse{0%,100%{box-shadow:0 0 16px var(--glow)}50%{box-shadow:0 0 32px rgba(0,230,100,.25)}}
-.logo-name{font-size:13px;letter-spacing:.2em;color:var(--green);font-weight:500}
-.logo-ver{font-size:9px;color:var(--dim);letter-spacing:.15em;margin-top:2px}
-
-.hdr-right{display:flex;align-items:center;gap:20px}
-.status-pill{
-  display:flex;align-items:center;gap:7px;
-  font-size:10px;letter-spacing:.12em;color:var(--dim);
-}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s ease infinite}
-.dot.amber{background:var(--amber);box-shadow:0 0 6px var(--amber)}
-.dot.red{background:var(--red);animation:none}
+/* Header */
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(0,230,100,.04),transparent);position:sticky;top:0;z-index:50;backdrop-filter:blur(4px)}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-mark{width:30px;height:30px;border:1px solid var(--green);border-radius:4px;display:grid;place-items:center;font-size:14px;box-shadow:0 0 16px var(--glow);animation:glow 4s ease-in-out infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 12px var(--glow)}50%{box-shadow:0 0 28px rgba(0,230,100,.25)}}
+.logo-name{font-size:12px;letter-spacing:.2em;color:var(--green);font-weight:600}
+.logo-sub{font-size:9px;color:var(--dim);letter-spacing:.12em;margin-top:2px}
+.hdr-right{display:flex;align-items:center;gap:16px}
+.status{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--dim)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:blink 2s ease infinite}
+.dot.off{background:var(--red);box-shadow:0 0 6px var(--red);animation:none}
+.dot.warn{background:var(--amber);box-shadow:0 0 6px var(--amber)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 #clock{font-size:10px;color:var(--dim)}
 
-/* ── Layout ── */
-.layout{display:grid;grid-template-columns:220px 1fr 280px;gap:0;min-height:calc(100vh - 50px)}
+/* Layout */
+.layout{display:grid;grid-template-columns:200px 1fr 260px;min-height:calc(100vh - 50px)}
 
-/* ── Left sidebar ── */
-.sidebar{border-right:1px solid var(--border);padding:20px 0;display:flex;flex-direction:column;gap:0}
-.sb-section{padding:12px 20px;border-bottom:1px solid var(--border)}
-.sb-label{font-size:9px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-bottom:12px}
-.sb-stat{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.sb-stat-key{font-size:10px;color:var(--dim)}
-.sb-stat-val{font-size:16px;color:var(--green);font-weight:600}
-.sb-stat-val.amber{color:var(--amber)}
-.sb-stat-val.red{color:var(--red)}
-.sb-stat-val.cyan{color:var(--cyan)}
+/* Sidebar */
+.sidebar{border-right:1px solid var(--border);padding:16px 0;display:flex;flex-direction:column}
+.sb-block{padding:12px 16px;border-bottom:1px solid var(--border)}
+.sb-label{font-size:9px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin-bottom:10px}
+.sb-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.sb-key{font-size:10px;color:var(--dim)}
+.sb-val{font-size:18px;font-weight:600;color:var(--green)}
+.sb-val.amber{color:var(--amber)}
+.sb-val.red{color:var(--red)}
+.sb-val.cyan{color:var(--cyan)}
 
-.phase-list{display:flex;flex-direction:column;gap:6px}
-.phase-item{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--dim);padding:6px 10px;border-radius:4px;transition:background .2s}
-.phase-item.active{background:rgba(0,230,100,.06);color:var(--green)}
-.phase-item.done{color:var(--cyan)}
-.phase-icon{width:16px;text-align:center;font-size:11px}
+.pipeline{padding:12px 16px;flex:1}
+.pipe-step{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;margin-bottom:3px;font-size:10px;color:var(--dim);transition:.2s}
+.pipe-step.active{background:rgba(0,230,100,.06);color:var(--green)}
+.pipe-step.done{color:var(--cyan)}
+.pipe-icon{width:14px;text-align:center}
 
-/* ── Center main ── */
-.center{overflow:hidden;display:flex;flex-direction:column}
-
-.tab-bar{display:flex;border-bottom:1px solid var(--border);background:var(--bg1)}
-.tab{
-  padding:11px 20px;font-size:10px;letter-spacing:.15em;color:var(--dim);
-  cursor:pointer;border-bottom:2px solid transparent;transition:.2s;
-  text-transform:uppercase;
-}
+/* Center */
+.center{display:flex;flex-direction:column;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg1)}
+.tab{padding:11px 18px;font-size:10px;letter-spacing:.14em;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;text-transform:uppercase;white-space:nowrap}
 .tab.active{color:var(--green);border-bottom-color:var(--green)}
 .tab:hover:not(.active){color:var(--text)}
 
-.tab-content{display:none;flex:1;overflow-y:auto}
-.tab-content.active{display:block}
+.pane{display:none;overflow-y:auto;max-height:calc(100vh - 100px)}
+.pane.active{display:block}
 
-/* Signals list */
-.signal-list{padding:0}
-.signal-row{
-  padding:14px 20px;border-bottom:1px solid var(--border);
-  display:grid;grid-template-columns:72px 1fr 160px;gap:12px;align-items:start;
-  transition:background .15s;cursor:default;
-  animation:faderow .35s ease;
-}
-@keyframes faderow{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
-.signal-row:hover{background:rgba(0,230,100,.025)}
-.badge{
-  font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
-  padding:4px 8px;border-radius:3px;text-align:center;
-}
-.badge.high  {background:rgba(255,51,85,.15);color:var(--red);border:1px solid rgba(255,51,85,.3)}
-.badge.medium{background:rgba(255,170,0,.12);color:var(--amber);border:1px solid rgba(255,170,0,.3)}
-.badge.low   {background:rgba(0,230,100,.08);color:var(--green);border:1px solid rgba(0,230,100,.2)}
-.sig-score{font-size:9px;color:var(--dim);margin-top:4px;text-align:center}
-
-.sig-body{}
-.sig-pattern{color:var(--bright);font-size:12px;margin-bottom:5px}
-.sig-meta{display:flex;flex-wrap:wrap;gap:10px}
-.chip{font-size:9px;color:var(--dim)}
-.chip span{color:var(--text)}
-.sig-rules{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
-.rule-tag{font-size:9px;color:var(--cyan);opacity:.8}
-
-.sig-gas{text-align:right}
-.gas-line{font-size:9px;color:var(--dim);margin-bottom:3px}
-.gas-line span{color:var(--lime)}
-
-/* Tokens list */
-.token-row{
-  padding:14px 20px;border-bottom:1px solid var(--border);
-  display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;
-  transition:background .15s;
-}
-.token-row:hover{background:rgba(0,230,100,.025)}
-.token-name{font-size:13px;color:var(--bright);margin-bottom:3px}
-.token-addr{font-size:9px;color:var(--dim)}
-.token-badges{display:flex;gap:6px;margin-top:5px}
-.token-flag{font-size:9px;padding:2px 7px;border-radius:2px}
-.token-flag.flagged{background:rgba(255,51,85,.12);color:var(--red)}
-.token-flag.clean{background:rgba(0,230,100,.08);color:var(--dim)}
-.token-clusters{text-align:right}
-.tc-num{font-size:20px;color:var(--green);font-weight:600}
-.tc-label{font-size:9px;color:var(--dim)}
-
-/* Clusters list */
-.cluster-row{padding:16px 20px;border-bottom:1px solid var(--border);animation:faderow .35s ease}
-.cluster-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-.cluster-score{font-size:22px;font-weight:600;color:var(--green)}
-.cluster-label{font-size:10px;color:var(--cyan);margin-top:2px}
-.cluster-fp{display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap}
-.fp-item{font-size:10px;color:var(--dim)}
-.fp-item span{color:var(--lime)}
-.wallet-chips{display:flex;flex-wrap:wrap;gap:6px}
-.wallet-chip{font-size:9px;background:var(--bg2);border:1px solid var(--border);padding:3px 8px;border-radius:3px;color:var(--dim)}
-
-/* Watchlist */
-.watch-row{
-  padding:12px 20px;border-bottom:1px solid var(--border);
-  display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;
-}
-.watch-addr{font-size:11px;color:var(--bright)}
-.watch-reason{font-size:9px;color:var(--dim);margin-top:3px}
-.watch-hits{text-align:right}
-.hits-num{font-size:18px;color:var(--amber);font-weight:600}
-.hits-label{font-size:9px;color:var(--dim)}
+/* Scrollbar */
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--muted);border-radius:2px}
 
 /* Empty state */
 .empty{padding:60px 20px;text-align:center;color:var(--dim)}
 .empty-icon{font-size:28px;opacity:.3;margin-bottom:10px}
 .empty-msg{font-size:10px;letter-spacing:.15em}
 
-/* ── Right panel ── */
-.right-panel{border-left:1px solid var(--border);display:flex;flex-direction:column}
-.rp-section{padding:16px;border-bottom:1px solid var(--border)}
-.rp-label{font-size:9px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-bottom:12px}
+/* Signal row */
+.sig-row{padding:13px 18px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:70px 1fr 150px;gap:12px;align-items:start;transition:background .15s;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none}}
+.sig-row:hover{background:rgba(0,230,100,.025)}
+.badge{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;text-align:center}
+.badge.high{background:rgba(255,51,85,.15);color:var(--red);border:1px solid rgba(255,51,85,.3)}
+.badge.medium{background:rgba(255,170,0,.12);color:var(--amber);border:1px solid rgba(255,170,0,.3)}
+.badge.low{background:rgba(0,230,100,.08);color:var(--green);border:1px solid rgba(0,230,100,.2)}
+.sig-score{font-size:9px;color:var(--dim);margin-top:4px;text-align:center}
+.sig-pattern{color:var(--bright);font-size:12px;margin-bottom:4px}
+.sig-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.chip{font-size:9px;color:var(--dim)}
+.chip b{color:var(--text)}
+.sig-rules{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px}
+.rule{font-size:9px;color:var(--cyan);opacity:.8}
+.gas-col{text-align:right}
+.gas-line{font-size:9px;color:var(--dim);margin-bottom:2px}
+.gas-line b{color:var(--lime)}
 
-.pipeline-step{
-  display:flex;align-items:center;gap:10px;
-  padding:8px 10px;border-radius:4px;margin-bottom:4px;
-  border:1px solid transparent;transition:.3s;
-}
-.pipeline-step.running{background:rgba(0,230,100,.06);border-color:rgba(0,230,100,.2)}
-.pipeline-step.done{border-color:rgba(0,204,170,.15)}
-.pipeline-step.idle{opacity:.5}
-.ps-icon{font-size:14px;width:20px;text-align:center}
-.ps-body{}
-.ps-name{font-size:10px;color:var(--text)}
-.ps-status{font-size:9px;color:var(--dim);margin-top:2px}
-.ps-status.running{color:var(--green);animation:blink 1.5s ease infinite}
-.ps-status.done{color:var(--cyan)}
+/* Token row */
+.tok-row{padding:13px 18px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;transition:background .15s}
+.tok-row:hover{background:rgba(0,230,100,.025)}
+.tok-sym{font-size:13px;color:var(--bright);margin-bottom:2px}
+.tok-addr{font-size:9px;color:var(--dim);margin-bottom:4px}
+.tok-tags{display:flex;gap:5px;flex-wrap:wrap}
+.tag{font-size:9px;padding:2px 6px;border-radius:2px}
+.tag.pump{background:rgba(255,51,85,.12);color:var(--red)}
+.tag.clean{background:rgba(0,230,100,.08);color:var(--dim)}
+.tag.done{background:rgba(0,204,170,.1);color:var(--cyan)}
+.tok-right{text-align:right}
+.tok-clusters{font-size:20px;color:var(--green);font-weight:600}
+.tok-clabel{font-size:9px;color:var(--dim)}
 
-/* Mini bar chart */
-.mini-bars{display:flex;align-items:flex-end;gap:3px;height:50px;margin-top:8px}
-.mbar{flex:1;background:var(--muted);border-radius:2px 2px 0 0;transition:height .5s ease,background .3s;min-height:3px}
-.mbar.lit{background:var(--green)}
-.mbar.hot{background:var(--amber)}
+/* Cluster row */
+.cluster-row{padding:15px 18px;border-bottom:1px solid var(--border);animation:fadein .3s ease}
+.cluster-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.cluster-score{font-size:22px;font-weight:600;color:var(--green)}
+.cluster-score span{font-size:11px;font-weight:300;color:var(--dim)}
+.cluster-meta{font-size:10px;color:var(--cyan);margin-top:2px}
+.fp-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.fp-item{font-size:10px;color:var(--dim)}
+.fp-item b{color:var(--lime)}
+.wallets{display:flex;flex-wrap:wrap;gap:5px}
+.wallet-chip{font-size:9px;background:var(--bg2);border:1px solid var(--border);padding:2px 7px;border-radius:2px;color:var(--dim)}
 
-/* Scan log */
-.scan-entry{padding:8px 0;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim)}
+/* Watchlist row */
+.watch-row{padding:12px 18px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.watch-addr{font-size:11px;color:var(--bright)}
+.watch-reason{font-size:9px;color:var(--dim);margin-top:2px}
+.watch-hits{text-align:right}
+.hits-num{font-size:18px;color:var(--amber);font-weight:600}
+.hits-label{font-size:9px;color:var(--dim)}
+
+/* Right panel */
+.right{border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.rp-block{padding:14px 16px;border-bottom:1px solid var(--border)}
+.rp-label{font-size:9px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase;margin-bottom:10px}
+
+.pipe-rp{display:flex;flex-direction:column;gap:4px}
+.pipe-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:4px;border:1px solid transparent;transition:.3s}
+.pipe-item.running{background:rgba(0,230,100,.05);border-color:rgba(0,230,100,.15)}
+.pipe-item.done{border-color:rgba(0,204,170,.12)}
+.pipe-item.idle{opacity:.45}
+.pi-icon{font-size:13px;width:18px;text-align:center}
+.pi-name{font-size:10px;color:var(--text)}
+.pi-status{font-size:9px;color:var(--dim);margin-top:1px}
+.pi-status.running{color:var(--green);animation:blink 1.5s ease infinite}
+.pi-status.done{color:var(--cyan)}
+
+.bars{display:flex;align-items:flex-end;gap:3px;height:48px;margin-top:8px}
+.bar{flex:1;background:var(--muted);border-radius:2px 2px 0 0;transition:height .5s ease,background .3s;min-height:3px}
+.bar.lit{background:var(--green)}
+.bar.hot{background:var(--amber)}
+
+.scan-log{flex:1;overflow-y:auto;padding:0 16px}
+.scan-entry{padding:7px 0;border-bottom:1px solid var(--border);font-size:9px;color:var(--dim)}
 .scan-entry:last-child{border-bottom:none}
-.scan-entry span{color:var(--text)}
+.scan-entry b{color:var(--text)}
 
-/* ── Scrollbars ── */
-::-webkit-scrollbar{width:3px;height:3px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--muted);border-radius:2px}
+/* Error banner */
+.err-banner{background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.3);color:var(--red);font-size:10px;padding:8px 18px;display:none}
+.err-banner.show{display:block}
 
-/* ── Responsive ── */
-@media(max-width:1000px){
-  .layout{grid-template-columns:1fr}
-  .sidebar,.right-panel{display:none}
-}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar,.right{display:none}}
 </style>
 </head>
 <body>
@@ -238,351 +164,340 @@ header{
   <div class="logo">
     <div class="logo-mark">◈</div>
     <div>
-      <div class="logo-name">SENTINEL</div>
-      <div class="logo-ver">AUTONOMOUS v2 — GAS FINGERPRINT INTELLIGENCE</div>
+      <div class="logo-name">ONCHAIN SENTINEL</div>
+      <div class="logo-sub">AUTONOMOUS GAS FINGERPRINT MONITOR</div>
     </div>
   </div>
   <div class="hdr-right">
-    <div class="status-pill"><div class="dot" id="dot"></div><span id="status">CONNECTING</span></div>
-    <div id="clock">—</div>
+    <div class="status">
+      <div class="dot warn" id="dot"></div>
+      <span id="status-text">CONNECTING</span>
+    </div>
+    <div id="clock">--:--:-- UTC</div>
   </div>
 </header>
 
+<div class="err-banner" id="err-banner">⚠ API unreachable — check Render logs</div>
+
 <div class="layout">
 
-  <!-- ── Left sidebar ── -->
+  <!-- Left sidebar -->
   <aside class="sidebar">
-    <div class="sb-section">
-      <div class="sb-label">Overview</div>
-      <div class="sb-stat"><span class="sb-stat-key">Tokens tracked</span><span class="sb-stat-val" id="sTokens">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">Pump events</span><span class="sb-stat-val amber" id="sPumps">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">Clusters found</span><span class="sb-stat-val cyan" id="sClusters">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">Wallets watched</span><span class="sb-stat-val" id="sWallets">—</span></div>
+    <div class="sb-block">
+      <div class="sb-label">Discovery</div>
+      <div class="sb-row"><span class="sb-key">Tokens</span><span class="sb-val" id="s-tokens">0</span></div>
+      <div class="sb-row"><span class="sb-key">Pump events</span><span class="sb-val amber" id="s-pumps">0</span></div>
+      <div class="sb-row"><span class="sb-key">Clusters</span><span class="sb-val cyan" id="s-clusters">0</span></div>
+      <div class="sb-row"><span class="sb-key">Watchlist</span><span class="sb-val" id="s-wallets">0</span></div>
     </div>
-    <div class="sb-section">
+    <div class="sb-block">
       <div class="sb-label">Signals</div>
-      <div class="sb-stat"><span class="sb-stat-key">Total</span><span class="sb-stat-val" id="sTotal">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">High</span><span class="sb-stat-val red" id="sHigh">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">Medium</span><span class="sb-stat-val amber" id="sMed">—</span></div>
-      <div class="sb-stat"><span class="sb-stat-key">Low</span><span class="sb-stat-val" id="sLow">—</span></div>
+      <div class="sb-row"><span class="sb-key">Total</span><span class="sb-val" id="s-total">0</span></div>
+      <div class="sb-row"><span class="sb-key">High</span><span class="sb-val red" id="s-high">0</span></div>
+      <div class="sb-row"><span class="sb-key">Medium</span><span class="sb-val amber" id="s-med">0</span></div>
+      <div class="sb-row"><span class="sb-key">Low</span><span class="sb-val" id="s-low">0</span></div>
     </div>
-    <div class="sb-section" style="flex:1">
+    <div class="pipeline">
       <div class="sb-label">Pipeline</div>
-      <div class="phase-list">
-        <div class="phase-item active"><span class="phase-icon">◎</span>Scan tokens</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Get price history</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Detect pump/dump</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Download transfers</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Enrich gas data</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Cluster wallets</div>
-        <div class="phase-item"><span class="phase-icon">↓</span>Build watchlist</div>
-        <div class="phase-item"><span class="phase-icon">◉</span>Monitor live</div>
-      </div>
+      <div class="pipe-step active"><span class="pipe-icon">◎</span>Scan tokens</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>CEX filter</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>Get price data</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>Detect pump/dump</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>Download transfers</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>Cluster wallets</div>
+      <div class="pipe-step"><span class="pipe-icon">↓</span>Build watchlist</div>
+      <div class="pipe-step"><span class="pipe-icon">◉</span>Monitor live</div>
     </div>
   </aside>
 
-  <!-- ── Center ── -->
+  <!-- Center -->
   <main class="center">
-    <div class="tab-bar">
+    <div class="tabs">
       <div class="tab active" onclick="showTab('signals')">Live Signals</div>
       <div class="tab" onclick="showTab('tokens')">Tokens</div>
       <div class="tab" onclick="showTab('clusters')">Clusters</div>
       <div class="tab" onclick="showTab('watchlist')">Watchlist</div>
     </div>
 
-    <!-- Signals -->
-    <div class="tab-content active" id="tab-signals">
-      <div class="signal-list" id="signalList">
-        <div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">MONITORING LIVE BLOCKS — AWAITING SIGNALS</div></div>
-      </div>
+    <div class="pane active" id="pane-signals">
+      <div id="signals-list"></div>
     </div>
-
-    <!-- Tokens -->
-    <div class="tab-content" id="tab-tokens">
-      <div id="tokenList">
-        <div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">SCAN IN PROGRESS — TOKENS WILL APPEAR HERE</div></div>
-      </div>
+    <div class="pane" id="pane-tokens">
+      <div id="tokens-list"></div>
     </div>
-
-    <!-- Clusters -->
-    <div class="tab-content" id="tab-clusters">
-      <div id="clusterList">
-        <div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">AWAITING CLUSTER ANALYSIS</div></div>
-      </div>
+    <div class="pane" id="pane-clusters">
+      <div id="clusters-list"></div>
     </div>
-
-    <!-- Watchlist -->
-    <div class="tab-content" id="tab-watchlist">
-      <div id="watchList">
-        <div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">WATCHLIST EMPTY — ANALYSIS WILL POPULATE THIS</div></div>
-      </div>
+    <div class="pane" id="pane-watchlist">
+      <div id="watchlist-list"></div>
     </div>
   </main>
 
-  <!-- ── Right panel ── -->
-  <aside class="right-panel">
-    <div class="rp-section">
-      <div class="rp-label">System Pipeline</div>
-      <div class="pipeline-step running" id="ps-scan">
-        <div class="ps-icon">🔍</div>
-        <div class="ps-body">
-          <div class="ps-name">Token Scanner</div>
-          <div class="ps-status running" id="pss-scan">RUNNING</div>
+  <!-- Right panel -->
+  <aside class="right">
+    <div class="rp-block">
+      <div class="rp-label">System Status</div>
+      <div class="pipe-rp">
+        <div class="pipe-item running" id="ps-scan">
+          <div class="pi-icon">🔍</div>
+          <div><div class="pi-name">Token Scanner</div><div class="pi-status running" id="pss-scan">RUNNING</div></div>
         </div>
-      </div>
-      <div class="pipeline-step idle" id="ps-analyze">
-        <div class="ps-icon">🧬</div>
-        <div class="ps-body">
-          <div class="ps-name">Analyzer</div>
-          <div class="ps-status" id="pss-analyze">IDLE</div>
+        <div class="pipe-item idle" id="ps-analyze">
+          <div class="pi-icon">🧬</div>
+          <div><div class="pi-name">Analyzer</div><div class="pi-status" id="pss-analyze">IDLE</div></div>
         </div>
-      </div>
-      <div class="pipeline-step idle" id="ps-cluster">
-        <div class="ps-icon">◈</div>
-        <div class="ps-body">
-          <div class="ps-name">Clustering Engine</div>
-          <div class="ps-status" id="pss-cluster">IDLE</div>
+        <div class="pipe-item idle" id="ps-cluster">
+          <div class="pi-icon">◈</div>
+          <div><div class="pi-name">Clustering</div><div class="pi-status" id="pss-cluster">IDLE</div></div>
         </div>
-      </div>
-      <div class="pipeline-step idle" id="ps-monitor">
-        <div class="ps-icon">📡</div>
-        <div class="ps-body">
-          <div class="ps-name">Live Monitor</div>
-          <div class="ps-status" id="pss-monitor">IDLE</div>
+        <div class="pipe-item idle" id="ps-monitor">
+          <div class="pi-icon">📡</div>
+          <div><div class="pi-name">Live Monitor</div><div class="pi-status" id="pss-monitor">IDLE</div></div>
         </div>
       </div>
     </div>
-
-    <div class="rp-section">
+    <div class="rp-block">
       <div class="rp-label">Signal Activity (12h)</div>
-      <div class="mini-bars" id="actBars"></div>
+      <div class="bars" id="act-bars"></div>
+      <div style="font-size:9px;color:var(--dim);margin-top:6px">← 12h ago &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; now →</div>
     </div>
-
-    <div class="rp-section" style="flex:1;overflow-y:auto">
+    <div class="rp-block" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
       <div class="rp-label">Scan Log</div>
-      <div id="scanLog"><div style="font-size:9px;color:var(--dim);">Waiting for first scan...</div></div>
+      <div class="scan-log" id="scan-log-list"></div>
     </div>
   </aside>
+
 </div>
 
 <script>
-let state = {signals:[], tokens:{}, clusters:[], watchlist:{}, stats:{}, scanLog:[]};
+// ── State ──────────────────────────────────────────────────────────────────
+const S = { signals:[], tokens:{}, clusters:[], watchlist:{}, stats:{}, scanLog:[], online:false };
+let pollErrors = 0;
 
-// ── Tabs ───────────────────────────────────────────────────────────────────
-function showTab(id) {
-  document.querySelectorAll('.tab,.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelector(`.tab[onclick="showTab('${id}')"]`).classList.add('active');
-  document.getElementById('tab-' + id).classList.add('active');
+// ── Utilities ──────────────────────────────────────────────────────────────
+function sh(a){ return a && a.length > 13 ? a.slice(0,8)+'...'+a.slice(-4) : (a||'—') }
+function num(n){ return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2}) }
+function empty(icon, msg){
+  return '<div class="empty"><div class="empty-icon">'+icon+'</div><div class="empty-msg">'+msg+'</div></div>';
 }
 
 // ── Clock ──────────────────────────────────────────────────────────────────
-function tick() {
+function tick(){
+  const d = new Date();
   document.getElementById('clock').textContent =
-    new Date().toUTCString().replace(' GMT','').split(', ')[1];
+    d.toUTCString().replace(' GMT','').split(', ')[1]||d.toISOString().slice(11,19)+' UTC';
 }
-setInterval(tick, 1000); tick();
+setInterval(tick,1000); tick();
 
-// ── Short address ──────────────────────────────────────────────────────────
-function sh(a) { return a ? a.slice(0,8)+'...'+a.slice(-4) : '—'; }
-function num(n) { return (n||0).toLocaleString(undefined,{maximumFractionDigits:2}); }
+// ── Tabs ───────────────────────────────────────────────────────────────────
+function showTab(id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  document.querySelector('.tab[onclick="showTab(\''+id+'\')"]').classList.add('active');
+  document.getElementById('pane-'+id).classList.add('active');
+}
 
 // ── Render signals ─────────────────────────────────────────────────────────
-function renderSignals() {
-  const el = document.getElementById('signalList');
-  if (!state.signals.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">MONITORING LIVE BLOCKS — AWAITING SIGNALS</div></div>';
-    return;
-  }
-  el.innerHTML = state.signals.map(s => {
-    const rules = (s.matched_rules||[]).map(r=>`<span class="rule-tag">▸ ${r}</span>`).join('');
-    const ts = s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '—';
-    return `
-    <div class="signal-row">
-      <div>
-        <div class="badge ${s.confidence||'low'}">${(s.confidence||'low').toUpperCase()}</div>
-        <div class="sig-score">${s.score||0}/100</div>
-      </div>
-      <div class="sig-body">
-        <div class="sig-pattern">${s.pattern_label||'—'}</div>
-        <div class="sig-meta">
-          <span class="chip">from <span>${sh(s.from_address)}</span></span>
-          <span class="chip">token <span>${s.token_symbol||'?'}</span></span>
-          <span class="chip">amt <span>${num(s.amount)}</span></span>
-          <span class="chip">blk <span>${s.block_number||'—'}</span></span>
-          <span class="chip">${ts}</span>
-        </div>
-        ${rules ? `<div class="sig-rules">${rules}</div>` : ''}
-      </div>
-      <div class="sig-gas">
-        <div class="gas-line">GL <span>${(s.gas_limit||0).toLocaleString()}</span></div>
-        <div class="gas-line">PF <span>${s.max_priority_fee||0}G</span></div>
-        <div class="gas-line">MF <span>${s.max_fee||0}G</span></div>
-      </div>
-    </div>`;
+function renderSignals(){
+  const el = document.getElementById('signals-list');
+  if(!S.signals.length){ el.innerHTML = empty('◎','MONITORING LIVE BLOCKS — AWAITING SIGNALS'); return; }
+  el.innerHTML = S.signals.map(s=>{
+    const conf  = s.confidence||'low';
+    const rules = (s.matched_rules||[]).map(r=>'<span class="rule">▸ '+r+'</span>').join('');
+    const ts    = s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '—';
+    return '<div class="sig-row">'
+      +'<div><div class="badge '+conf+'">'+conf.toUpperCase()+'</div><div class="sig-score">'+(s.score||0)+'/100</div></div>'
+      +'<div><div class="sig-pattern">'+(s.pattern_label||s.stage||'signal')+'</div>'
+      +'<div class="sig-chips">'
+      +'<span class="chip">from <b>'+sh(s.from_address||s.hub_address)+'</b></span>'
+      +'<span class="chip">token <b>'+(s.token_symbol||'?')+'</b></span>'
+      +'<span class="chip">blk <b>'+(s.block_number||'—')+'</b></span>'
+      +'<span class="chip">'+ts+'</span>'
+      +'</div>'
+      +(rules?'<div class="sig-rules">'+rules+'</div>':'')
+      +'</div>'
+      +'<div class="gas-col">'
+      +'<div class="gas-line">GL <b>'+num(s.gas_limit)+'</b></div>'
+      +'<div class="gas-line">PF <b>'+(s.max_priority_fee||0)+' G</b></div>'
+      +'<div class="gas-line">MF <b>'+(s.max_fee||0)+' G</b></div>'
+      +'</div>'
+      +'</div>';
   }).join('');
 }
 
 // ── Render tokens ──────────────────────────────────────────────────────────
-function renderTokens() {
-  const el = document.getElementById('tokenList');
-  const tokens = Object.values(state.tokens);
-  if (!tokens.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">SCAN IN PROGRESS</div></div>';
-    return;
-  }
-  el.innerHTML = tokens.map(t => `
-    <div class="token-row">
-      <div>
-        <div class="token-name">${t.symbol||'?'}</div>
-        <div class="token-addr">${sh(t.address||'')}</div>
-        <div class="token-badges">
-          <span class="token-flag ${t.flagged?'flagged':'clean'}">${t.flagged?'PUMP/DUMP DETECTED':'CLEAN'}</span>
-          ${t.analysis_status==='complete'?'<span class="token-flag" style="background:rgba(0,204,170,.1);color:var(--cyan)">ANALYZED</span>':''}
-        </div>
-      </div>
-      <div class="token-clusters">
-        <div class="tc-num">${t.clusters_found||0}</div>
-        <div class="tc-label">clusters</div>
-        <div style="font-size:9px;color:var(--dim);margin-top:2px">${t.transfers_analyzed||0} txs</div>
-      </div>
-    </div>`).join('');
+function renderTokens(){
+  const el   = document.getElementById('tokens-list');
+  const list = Object.values(S.tokens||{});
+  if(!list.length){ el.innerHTML = empty('◎','SCAN IN PROGRESS — TOKENS APPEAR AFTER FIRST CYCLE'); return; }
+  el.innerHTML = list.map(t=>{
+    const sym = t.symbol||'?';
+    const addr = t.address||'';
+    const flagged = t.flagged;
+    const done    = t.analysis_status==='complete';
+    return '<div class="tok-row">'
+      +'<div>'
+      +'<div class="tok-sym">'+sym+'</div>'
+      +'<div class="tok-addr">'+sh(addr)+'</div>'
+      +'<div class="tok-tags">'
+      +(flagged?'<span class="tag pump">PUMP/DUMP</span>':'<span class="tag clean">CLEAN</span>')
+      +(done?'<span class="tag done">ANALYZED</span>':'')
+      +(t.on_bitget?'<span class="tag done">BITGET</span>':'')
+      +'</div>'
+      +'</div>'
+      +'<div class="tok-right">'
+      +'<div class="tok-clusters">'+(t.clusters_found||0)+'</div>'
+      +'<div class="tok-clabel">clusters</div>'
+      +'<div style="font-size:9px;color:var(--dim);margin-top:2px">'+(t.transfers_analyzed||0)+' txs</div>'
+      +'</div>'
+      +'</div>';
+  }).join('');
 }
 
 // ── Render clusters ────────────────────────────────────────────────────────
-function renderClusters() {
-  const el = document.getElementById('clusterList');
-  if (!state.clusters.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">AWAITING CLUSTER ANALYSIS</div></div>';
-    return;
-  }
-  el.innerHTML = state.clusters.map(c => {
+function renderClusters(){
+  const el = document.getElementById('clusters-list');
+  if(!S.clusters.length){ el.innerHTML = empty('◈','CLUSTERS APPEAR AFTER ANALYSIS COMPLETES'); return; }
+  el.innerHTML = S.clusters.map(c=>{
     const fp = c.fingerprint||{};
     const wallets = (c.wallets||[]).slice(0,8);
-    return `
-    <div class="cluster-row">
-      <div class="cluster-header">
-        <div>
-          <div class="cluster-score">${c.score||0}<span style="font-size:12px;font-weight:300;color:var(--dim)">/100</span></div>
-          <div class="cluster-label">${c.label||'—'} · ${c.wallet_count||c.wallets?.length||0} wallets · $${c.symbol||'?'}</div>
-        </div>
-        <div style="text-align:right;font-size:9px;color:var(--dim)">${c.tx_count||0} txs<br>${num(c.total_volume)} tokens</div>
-      </div>
-      <div class="cluster-fp">
-        <span class="fp-item">GAS LIMIT <span>${(fp.gas_limit||0).toLocaleString()}</span></span>
-        <span class="fp-item">PRIORITY <span>${fp.max_priority_fee||0} G</span></span>
-        <span class="fp-item">MAX FEE <span>${fp.max_fee||0} G</span></span>
-      </div>
-      <div class="wallet-chips">${wallets.map(w=>`<span class="wallet-chip">${sh(w)}</span>`).join('')}${c.wallets?.length>8?`<span class="wallet-chip">+${c.wallets.length-8} more</span>`:''}</div>
-    </div>`;
+    const extra   = (c.wallets||[]).length - 8;
+    return '<div class="cluster-row">'
+      +'<div class="cluster-head">'
+      +'<div><div class="cluster-score">'+(c.score||0)+'<span>/100</span></div>'
+      +'<div class="cluster-meta">'+(c.label||'—')+' · '+(c.wallet_count||wallets.length)+' wallets · $'+(c.symbol||'?')+'</div></div>'
+      +'<div style="text-align:right;font-size:9px;color:var(--dim)">'+(c.tx_count||0)+' txs<br>'+num(c.total_volume)+' tokens</div>'
+      +'</div>'
+      +'<div class="fp-row">'
+      +'<span class="fp-item">GAS LIMIT <b>'+num(fp.gas_limit)+'</b></span>'
+      +'<span class="fp-item">PRIORITY <b>'+(fp.max_priority_fee||0)+' G</b></span>'
+      +'<span class="fp-item">MAX FEE <b>'+(fp.max_fee||0)+' G</b></span>'
+      +'</div>'
+      +'<div class="wallets">'+wallets.map(w=>'<span class="wallet-chip">'+sh(w)+'</span>').join('')
+      +(extra>0?'<span class="wallet-chip">+'+extra+' more</span>':'')
+      +'</div>'
+      +'</div>';
   }).join('');
 }
 
 // ── Render watchlist ───────────────────────────────────────────────────────
-function renderWatchlist() {
-  const el = document.getElementById('watchList');
-  const entries = Object.values(state.watchlist);
-  if (!entries.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">◎</div><div class="empty-msg">WATCHLIST EMPTY</div></div>';
-    return;
-  }
+function renderWatchlist(){
+  const el      = document.getElementById('watchlist-list');
+  const entries = Object.values(S.watchlist||{});
+  if(!entries.length){ el.innerHTML = empty('◎','WATCHLIST EMPTY — POPULATES AFTER FIRST ANALYSIS'); return; }
   entries.sort((a,b)=>(b.hit_count||0)-(a.hit_count||0));
-  el.innerHTML = entries.map(w => `
-    <div class="watch-row">
-      <div>
-        <div class="watch-addr">${sh(w.address||'')} <span style="font-size:9px;color:var(--dim)">$${w.symbol||'?'}</span></div>
-        <div class="watch-reason">${w.reason||'—'}</div>
-      </div>
-      <div class="watch-hits">
-        <div class="hits-num">${w.hit_count||0}</div>
-        <div class="hits-label">hits</div>
-      </div>
-    </div>`).join('');
+  el.innerHTML = entries.map(w=>'<div class="watch-row">'
+    +'<div><div class="watch-addr">'+sh(w.address||'')
+    +' <span style="font-size:9px;color:var(--dim)">$'+(w.symbol||'?')+'</span></div>'
+    +'<div class="watch-reason">'+(w.reason||'—')+'</div></div>'
+    +'<div class="watch-hits"><div class="hits-num">'+(w.hit_count||0)+'</div>'
+    +'<div class="hits-label">hits</div></div>'
+    +'</div>').join('');
 }
 
-// ── Render stats sidebar ───────────────────────────────────────────────────
-function renderStats() {
-  const s = state.stats;
-  document.getElementById('sTokens').textContent   = s.tokens_tracked    ?? '—';
-  document.getElementById('sPumps').textContent    = s.pump_events_found ?? '—';
-  document.getElementById('sClusters').textContent = s.clusters_found    ?? '—';
-  document.getElementById('sWallets').textContent  = s.wallets_watched   ?? '—';
-  document.getElementById('sTotal').textContent    = s.total_signals     ?? '—';
-  document.getElementById('sHigh').textContent     = s.high_signals      ?? '—';
-  document.getElementById('sMed').textContent      = s.med_signals       ?? '—';
-  document.getElementById('sLow').textContent      = s.low_signals       ?? '—';
+// ── Render stats ───────────────────────────────────────────────────────────
+function renderStats(){
+  const s = S.stats;
+  document.getElementById('s-tokens').textContent   = s.tokens_tracked    ||0;
+  document.getElementById('s-pumps').textContent    = s.pump_events_found ||0;
+  document.getElementById('s-clusters').textContent = s.clusters_found    ||0;
+  document.getElementById('s-wallets').textContent  = s.wallets_watched   ||0;
+  document.getElementById('s-total').textContent    = s.total_signals     ||0;
+  document.getElementById('s-high').textContent     = s.high_signals      ||0;
+  document.getElementById('s-med').textContent      = s.med_signals       ||0;
+  document.getElementById('s-low').textContent      = s.low_signals       ||0;
 }
 
-// ── Activity bars ──────────────────────────────────────────────────────────
-function renderBars() {
+// ── Render activity bars ───────────────────────────────────────────────────
+function renderBars(){
   const buckets = new Array(12).fill(0);
-  const now = Date.now();
-  state.signals.forEach(s => {
-    try {
-      const age = (now - new Date(s.timestamp).getTime()) / 3600000;
-      if (age >= 0 && age < 12) buckets[11 - Math.floor(age)]++;
-    } catch(e){}
+  const now     = Date.now();
+  (S.signals||[]).forEach(s=>{
+    try{
+      const age = (now - new Date(s.timestamp||s.received_at).getTime())/3600000;
+      if(age>=0 && age<12) buckets[11-Math.floor(age)]++;
+    }catch(e){}
   });
-  const max = Math.max(...buckets, 1);
-  document.getElementById('actBars').innerHTML = buckets.map((v,i) => {
-    const h = Math.round((v/max)*44)+4;
+  const max = Math.max(...buckets,1);
+  document.getElementById('act-bars').innerHTML = buckets.map((v,i)=>{
+    const h   = Math.round((v/max)*42)+4;
     const cls = v===0?'':(v===max?'hot':'lit');
-    return `<div class="mbar ${cls}" style="height:${h}px" title="${v}"></div>`;
+    return '<div class="bar '+cls+'" style="height:'+h+'px" title="'+v+' signals"></div>';
   }).join('');
 }
 
-// ── Scan log ───────────────────────────────────────────────────────────────
-function renderScanLog() {
-  const el = document.getElementById('scanLog');
-  if (!state.scanLog.length) return;
-  el.innerHTML = [...state.scanLog].reverse().slice(0,8).map(e => `
-    <div class="scan-entry">
-      <span>${e.at?.slice(11,19)||'—'}</span> — checked <span>${e.candidates_checked||0}</span> tokens, flagged <span>${e.tokens_flagged||0}</span>
-    </div>`).join('');
+// ── Render scan log ────────────────────────────────────────────────────────
+function renderScanLog(){
+  const el = document.getElementById('scan-log-list');
+  if(!S.scanLog.length){ el.innerHTML='<div style="font-size:9px;color:var(--dim)">Waiting for first scan...</div>'; return; }
+  el.innerHTML = [...S.scanLog].reverse().slice(0,10).map(e=>
+    '<div class="scan-entry">'+
+    (e.at||'').slice(11,19)+
+    ' — checked <b>'+(e.candidates_checked||0)+'</b>'+
+    ' CEX <b>'+(e.cex_passed||0)+'</b>'+
+    ' flagged <b>'+(e.tokens_flagged||0)+'</b>'+
+    '</div>'
+  ).join('');
 }
 
 // ── Pipeline status ────────────────────────────────────────────────────────
-function updatePipeline() {
-  const s = state.stats;
-  const wl = s.wallets_watched || 0;
-  const cl = s.clusters_found  || 0;
-  const tk = s.tokens_tracked  || 0;
+function renderPipeline(){
+  const s  = S.stats;
+  const wl = s.wallets_watched||0;
+  const cl = s.clusters_found||0;
+  const tk = s.tokens_tracked||0;
 
-  function set(id, statusId, state, statusText) {
-    document.getElementById(id).className = `pipeline-step ${state}`;
-    const el = document.getElementById(statusId);
-    el.className = `ps-status ${state}`;
-    el.textContent = statusText;
+  function set(id,sid,state,txt){
+    document.getElementById(id).className='pipe-item '+state;
+    const el=document.getElementById(sid);
+    el.className='pi-status '+state;
+    el.textContent=txt;
   }
+  set('ps-scan',    'pss-scan',    'running','RUNNING');
+  set('ps-analyze', 'pss-analyze', tk>0?(cl>0?'done':'running'):'idle', tk>0?(cl>0?'DONE':'RUNNING'):'IDLE');
+  set('ps-cluster', 'pss-cluster', cl>0?'done':'idle', cl>0?cl+' CLUSTERS':'IDLE');
+  set('ps-monitor', 'pss-monitor', wl>0?'running':'idle', wl>0?wl+' WALLETS':'IDLE');
+}
 
-  set('ps-scan',    'pss-scan',    'running', 'RUNNING');
-  set('ps-analyze', 'pss-analyze', tk>0 ? (cl>0?'done':'running') : 'idle', tk>0?(cl>0?'DONE':'RUNNING'):'IDLE');
-  set('ps-cluster', 'pss-cluster', cl>0?'done':'idle', cl>0?`${cl} CLUSTERS`:'IDLE');
-  set('ps-monitor', 'pss-monitor', wl>0?'running':'idle', wl>0?`${wl} WALLETS`:'IDLE');
+// ── Status dot ────────────────────────────────────────────────────────────
+function setStatus(online, warn){
+  const dot  = document.getElementById('dot');
+  const txt  = document.getElementById('status-text');
+  const err  = document.getElementById('err-banner');
+  if(online){
+    dot.className = 'dot'; txt.textContent = 'LIVE';
+    err.classList.remove('show');
+    pollErrors = 0;
+  } else {
+    dot.className = warn?'dot warn':'dot off';
+    txt.textContent = warn?'CONNECTING':'OFFLINE';
+    if(!warn) err.classList.add('show');
+  }
 }
 
 // ── Fetch & poll ───────────────────────────────────────────────────────────
-async function fetchAll() {
-  try {
-    const [sigR, statsR, clustersR, watchR, tokensR, scansR, healthR] = await Promise.allSettled([
-      fetch('/api/signals').then(r=>r.json()),
-      fetch('/api/stats').then(r=>r.json()),
-      fetch('/api/clusters').then(r=>r.json()),
-      fetch('/api/watchlist').then(r=>r.json()),
-      fetch('/api/tokens').then(r=>r.json()),
-      fetch('/api/scan-log').then(r=>r.json()),
-      fetch('/api/health').then(r=>r.json()),
-    ]);
+async function fetchAll(){
+  try{
+    const [sigR,statsR,clustersR,watchR,tokensR,scansR,healthR] =
+      await Promise.allSettled([
+        fetch('/api/signals').then(r=>r.json()),
+        fetch('/api/stats').then(r=>r.json()),
+        fetch('/api/clusters').then(r=>r.json()),
+        fetch('/api/watchlist').then(r=>r.json()),
+        fetch('/api/tokens').then(r=>r.json()),
+        fetch('/api/scan-log').then(r=>r.json()),
+        fetch('/api/health').then(r=>r.json()),
+      ]);
 
-    if (sigR.status==='fulfilled')      state.signals   = sigR.value;
-    if (statsR.status==='fulfilled')    state.stats     = statsR.value;
-    if (clustersR.status==='fulfilled') state.clusters  = clustersR.value;
-    if (watchR.status==='fulfilled')    state.watchlist = watchR.value;
-    if (tokensR.status==='fulfilled')   state.tokens    = tokensR.value;
-    if (scansR.status==='fulfilled')    state.scanLog   = scansR.value;
+    const ok = healthR.status==='fulfilled' && healthR.value?.status==='ok';
+    setStatus(ok, !ok && pollErrors < 3);
 
-    const online = healthR.status==='fulfilled' && healthR.value?.status==='ok';
-    document.getElementById('dot').className    = 'dot' + (online?'':' red');
-    document.getElementById('status').textContent = online ? 'LIVE' : 'OFFLINE';
+    if(sigR.status==='fulfilled'      && Array.isArray(sigR.value))     S.signals  = sigR.value;
+    if(statsR.status==='fulfilled'    && statsR.value)                   S.stats    = statsR.value;
+    if(clustersR.status==='fulfilled' && Array.isArray(clustersR.value)) S.clusters = clustersR.value;
+    if(watchR.status==='fulfilled'    && watchR.value)                   S.watchlist= watchR.value;
+    if(tokensR.status==='fulfilled'   && tokensR.value)                  S.tokens   = tokensR.value;
+    if(scansR.status==='fulfilled'    && Array.isArray(scansR.value))    S.scanLog  = scansR.value;
 
     renderSignals();
     renderTokens();
@@ -591,14 +506,17 @@ async function fetchAll() {
     renderStats();
     renderBars();
     renderScanLog();
-    updatePipeline();
+    renderPipeline();
 
-  } catch(e) {
-    document.getElementById('dot').className     = 'dot red';
-    document.getElementById('status').textContent = 'ERROR';
+  }catch(e){
+    pollErrors++;
+    setStatus(false, pollErrors < 3);
+    console.error('Poll error:', e);
   }
 }
 
+// Initial load + polling
+setStatus(false, true);
 fetchAll();
 setInterval(fetchAll, 6000);
 </script>
