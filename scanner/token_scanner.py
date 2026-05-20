@@ -128,7 +128,11 @@ def _get(url: str, timeout: int = 15) -> dict | list | None:
 # ── Source A: DexScreener boosts (ETH + Base) ─────────────────────────────────
 
 def _from_dexscreener_boosts() -> list[dict]:
-    results = []
+    """
+    Boost candidates arrive with no price/liquidity data — enrich each one
+    with a DS_TOKEN_PAIRS lookup so downstream pattern detection has real numbers.
+    """
+    raw = []
     for url in [DS_BOOSTS_TOP, DS_BOOSTS_LATEST]:
         data = _get(url)
         if data and isinstance(data, list):
@@ -136,14 +140,73 @@ def _from_dexscreener_boosts() -> list[dict]:
                 addr  = item.get("tokenAddress", "")
                 chain = item.get("chainId", "")
                 if addr and chain in TARGET_CHAINS:
-                    results.append({
+                    raw.append({
                         "address": addr.lower(),
                         "symbol":  item.get("description", "?")[:20],
                         "chain":   chain,
-                        "source":  "ds_boost",
                     })
         time.sleep(0.3)
-    print(f"[Scanner] DS boosts: {len(results)} (ETH+Base)")
+
+    # Dedup before making per-token calls
+    seen, unique_raw = set(), []
+    for r in raw:
+        key = f"{r['chain']}:{r['address']}"
+        if key not in seen:
+            seen.add(key)
+            unique_raw.append(r)
+
+    results = []
+    for item in unique_raw:
+        addr  = item["address"]
+        chain = item["chain"]
+
+        ds_data = _get(DS_TOKEN_PAIRS + addr)
+        if not ds_data:
+            time.sleep(0.3)
+            continue
+
+        pairs       = ds_data.get("pairs") or []
+        chain_pairs = [p for p in pairs if p.get("chainId") == chain]
+        if not chain_pairs:
+            time.sleep(0.3)
+            continue
+
+        best    = max(chain_pairs,
+                      key=lambda p: float((p.get("liquidity") or {}).get("usd", 0) or 0))
+        liq     = float((best.get("liquidity") or {}).get("usd", 0) or 0)
+        vol     = float((best.get("volume")    or {}).get("h24", 0) or 0)
+        changes = best.get("priceChange") or {}
+        cap     = _cap_from_pair(best)
+        h1      = float(changes.get("h1",  0) or 0)
+        h6      = float(changes.get("h6",  0) or 0)
+        h24     = float(changes.get("h24", 0) or 0)
+        d7      = float(changes.get("d7",  0) or 0) if "d7" in changes else None
+
+        if not (MIN_LIQUIDITY <= liq <= MAX_LIQUIDITY):
+            time.sleep(0.3)
+            continue
+        if not _cap_ok(cap):
+            cap_m = cap / 1e6
+            print(f"[Scanner] SKIP {item['symbol']:10s} cap=${cap_m:.1f}M > ${MAX_MARKET_CAP_USD/1e6:.0f}M ceiling")
+            time.sleep(0.3)
+            continue
+
+        results.append({
+            "address":    addr,
+            "symbol":     item["symbol"],
+            "chain":      chain,
+            "source":     "ds_boost",
+            "market_cap": cap,
+            "liq":        liq,
+            "vol_24h":    vol,
+            "h1":         h1,
+            "h6":         h6,
+            "h24":        h24,
+            "d7":         d7,
+        })
+        time.sleep(0.3)
+
+    print(f"[Scanner] DS boosts: {len(results)} (ETH+Base, enriched)")
     return results
 
 
@@ -249,18 +312,54 @@ def _from_defillama_midcap() -> list[dict]:
         chain   = p.get("chain", "Ethereum")
         cap     = float(p.get("mcap", 0) or p.get("fdv", 0) or 0)
 
-        # Map DeFiLlama chain name → our internal chain id
         chain_id = "base" if chain == "Base" else "ethereum"
 
-        if address and address.startswith("0x") and len(address) == 42:
-            results.append({
-                "address":      address,
-                "symbol":       symbol,
-                "chain":        chain_id,
-                "source":       "defillama_midcap",
-                "market_cap":   cap,
-                "defillama_1h": change,
-            })
+        if not (address and address.startswith("0x") and len(address) == 42):
+            continue
+
+        # Enrich with live DexScreener price/liquidity data so downstream
+        # pattern detection never hits the slow live-fetch fallback branch.
+        liq, vol, h1, h6, h24, d7 = 0.0, 0.0, None, None, None, None
+        ds_data = _get(DS_TOKEN_PAIRS + address)
+        if ds_data:
+            pairs = ds_data.get("pairs") or []
+            chain_pairs = [pr for pr in pairs if pr.get("chainId") == chain_id]
+            if chain_pairs:
+                best    = max(chain_pairs,
+                              key=lambda pr: float((pr.get("liquidity") or {}).get("usd", 0) or 0))
+                liq     = float((best.get("liquidity") or {}).get("usd", 0) or 0)
+                vol     = float((best.get("volume")    or {}).get("h24", 0) or 0)
+                changes = best.get("priceChange") or {}
+                h1      = float(changes.get("h1",  0) or 0)
+                h6      = float(changes.get("h6",  0) or 0)
+                h24     = float(changes.get("h24", 0) or 0)
+                d7      = float(changes.get("d7",  0) or 0) if "d7" in changes else None
+                # Prefer DexScreener cap if better than DeFiLlama's
+                ds_cap  = _cap_from_pair(best)
+                if ds_cap > 0:
+                    cap = ds_cap
+        time.sleep(0.3)
+
+        # Re-apply liquidity and cap filters now that we have real numbers
+        if not (MIN_LIQUIDITY <= liq <= MAX_LIQUIDITY):
+            continue
+        if not _cap_ok(cap):
+            continue
+
+        results.append({
+            "address":      address,
+            "symbol":       symbol,
+            "chain":        chain_id,
+            "source":       "defillama_midcap",
+            "market_cap":   cap,
+            "defillama_1h": change,
+            "liq":          liq,
+            "vol_24h":      vol,
+            "h1":           h1,
+            "h6":           h6,
+            "h24":          h24,
+            "d7":           d7,
+        })
 
     print(f"[Scanner] DeFiLlama mid-cap: {len(results)} (ETH+Base)")
     return results
