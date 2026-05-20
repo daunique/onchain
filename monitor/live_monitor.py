@@ -1,9 +1,16 @@
 """
-monitor/live_monitor.py
-────────────────────────
-Subscribes to Alchemy WebSocket for new blocks.
-On each block, scans for any token transfers FROM wallets on the watchlist.
-When a watched wallet moves, fires a signal with full context.
+monitor/live_monitor.py  (v2 — ETH + Base)
+────────────────────────────────────────────
+Subscribes to WebSocket streams for new blocks on both Ethereum and Base.
+Scans every block for ERC-20 transfers from watched wallets.
+
+WebSocket endpoints:
+  Ethereum  — ALCHEMY_WS_URL       (existing env var)
+  Base      — ALCHEMY_BASE_WS_URL  (new env var)
+
+Both chains run in separate asyncio tasks sharing the same store and
+signal callback. Wallet watchlist entries carry a `chain` field so
+Base wallets are only matched against Base transfers.
 """
 
 import os
@@ -12,46 +19,53 @@ import asyncio
 import aiohttp
 from datetime import datetime
 
-ALCHEMY_WS_URL   = os.getenv("ALCHEMY_WS_URL",   "")
-ALCHEMY_HTTP_URL = os.getenv("ALCHEMY_HTTP_URL",  "")
-ETHERSCAN_KEY    = os.getenv("ETHERSCAN_API_KEY", "")
-GWEI = 1e9
+ALCHEMY_ETH_WS   = os.getenv("ALCHEMY_WS_URL",       "")
+ALCHEMY_ETH_HTTP = os.getenv("ALCHEMY_HTTP_URL",      "")
+ALCHEMY_BASE_WS  = os.getenv("ALCHEMY_BASE_WS_URL",   "")
+ALCHEMY_BASE_HTTP= os.getenv("ALCHEMY_BASE_HTTP_URL", "")
 
+GWEI = 1e9
 ERC20_TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 
-class LiveMonitor:
-    def __init__(self, store, on_signal):
+class ChainMonitor:
+    """Monitors a single chain via its Alchemy WebSocket + HTTP endpoints."""
+
+    def __init__(self, chain: str, ws_url: str, http_url: str, store, on_signal):
+        self.chain     = chain
+        self.ws_url    = ws_url
+        self.http_url  = http_url
         self.store     = store
         self.on_signal = on_signal
         self.running   = False
         self._last_block = 0
 
-    async def _get_logs(self, session: aiohttp.ClientSession, block_hex: str) -> list[dict]:
-        """Get all ERC-20 Transfer logs in a block."""
+    async def _get_logs(self, session: aiohttp.ClientSession,
+                        block_hex: str) -> list[dict]:
         payload = {
             "jsonrpc": "2.0", "id": 1,
             "method":  "eth_getLogs",
-            "params":  [{"fromBlock": block_hex, "toBlock": block_hex, "topics": [ERC20_TRANSFER_TOPIC]}],
+            "params":  [{"fromBlock": block_hex, "toBlock": block_hex,
+                         "topics": [ERC20_TRANSFER_TOPIC]}],
         }
         try:
-            async with session.post(ALCHEMY_HTTP_URL, json=payload,
+            async with session.post(self.http_url, json=payload,
                                     timeout=aiohttp.ClientTimeout(total=10)) as r:
                 d = await r.json()
                 return d.get("result", [])
         except Exception as e:
-            print(f"[Monitor] Log fetch error: {e}")
+            print(f"[Monitor:{self.chain}] Log fetch error: {e}")
             return []
 
-    async def _get_tx_detail(self, session: aiohttp.ClientSession, tx_hash: str) -> dict:
-        """Fetch transaction details for gas info."""
+    async def _get_tx_detail(self, session: aiohttp.ClientSession,
+                             tx_hash: str) -> dict:
         payload = {
             "jsonrpc": "2.0", "id": 1,
             "method":  "eth_getTransactionByHash",
             "params":  [tx_hash],
         }
         try:
-            async with session.post(ALCHEMY_HTTP_URL, json=payload,
+            async with session.post(self.http_url, json=payload,
                                     timeout=aiohttp.ClientTimeout(total=8)) as r:
                 d = await r.json()
                 return d.get("result") or {}
@@ -59,7 +73,6 @@ class LiveMonitor:
             return {}
 
     async def _process_log(self, log: dict, session: aiohttp.ClientSession):
-        """Check if a transfer involves a watched wallet. Fire signal if so."""
         try:
             if len(log.get("topics", [])) < 3:
                 return
@@ -71,24 +84,25 @@ class LiveMonitor:
             token_addr = log["address"].lower()
 
             watchlist = self.store.get_watchlist()
-
-            # Check if from_address is on watchlist
             watcher_match = watchlist.get(from_addr)
             if not watcher_match:
                 return
 
-            # Fetch gas details
+            # Only fire if the wallet was added for this chain
+            wallet_chain = watcher_match.get("chain", "ethereum")
+            if wallet_chain != self.chain:
+                return
+
             tx_detail        = await self._get_tx_detail(session, tx_hash)
             gas_limit        = int(tx_detail.get("gas", "0x0"), 16)
             max_priority_fee = int(tx_detail.get("maxPriorityFeePerGas", "0x0"), 16) / GWEI
-            max_fee          = int(tx_detail.get("maxFeePerGas", "0x0"), 16) / GWEI
+            max_fee          = int(tx_detail.get("maxFeePerGas",         "0x0"), 16) / GWEI
 
             try:
                 amount = int(log["data"], 16) / 1e18
             except Exception:
                 amount = 0
 
-            # Score this signal
             expected_fp    = watcher_match.get("fingerprint", {})
             confidence, score, matched = self._score_live_tx(
                 gas_limit, max_priority_fee, max_fee, expected_fp, from_addr, watchlist
@@ -100,6 +114,7 @@ class LiveMonitor:
                 "to_address":       to_addr,
                 "token_address":    token_addr,
                 "token_symbol":     watcher_match.get("symbol", "?"),
+                "chain":            self.chain,
                 "amount":           round(amount, 4),
                 "gas_limit":        gas_limit,
                 "max_priority_fee": round(max_priority_fee, 4),
@@ -117,15 +132,13 @@ class LiveMonitor:
             self.on_signal(signal)
 
         except Exception as e:
-            print(f"[Monitor] Process log error: {e}")
+            print(f"[Monitor:{self.chain}] Process log error: {e}")
 
     def _score_live_tx(self, gas_limit, max_priority_fee, max_fee,
                        expected_fp: dict, from_addr: str, watchlist: dict):
-        """Score a live tx against the expected fingerprint for this wallet."""
         score   = 0
         matched = []
 
-        # Always a hit because the wallet itself is on the watchlist
         score += 40
         matched.append("watched_wallet_active")
 
@@ -162,8 +175,12 @@ class LiveMonitor:
         return confidence, score, matched
 
     async def start(self):
+        if not self.ws_url or not self.http_url:
+            print(f"[Monitor:{self.chain}] No WS/HTTP URL configured — skipping")
+            return
+
         self.running = True
-        print(f"[Monitor] Connecting to Alchemy WebSocket...")
+        print(f"[Monitor:{self.chain}] Connecting to {self.ws_url[:40]}...")
 
         import websockets
         subscribe = json.dumps({
@@ -174,9 +191,9 @@ class LiveMonitor:
 
         async with aiohttp.ClientSession() as session:
             try:
-                async with websockets.connect(ALCHEMY_WS_URL, ping_interval=20) as ws:
+                async with websockets.connect(self.ws_url, ping_interval=20) as ws:
                     await ws.send(subscribe)
-                    print("[Monitor] ✅ Subscribed to new block heads")
+                    print(f"[Monitor:{self.chain}] ✅ Subscribed to new block heads")
 
                     while self.running:
                         try:
@@ -192,20 +209,72 @@ class LiveMonitor:
                                 if block_num > self._last_block:
                                     self._last_block = block_num
                                     wl_size = len(self.store.get_watchlist())
-                                    print(f"[Monitor] Block {block_num} | watching {wl_size} wallets")
+                                    print(f"[Monitor:{self.chain}] Block {block_num} "
+                                          f"| watching {wl_size} wallets")
                                     logs = await self._get_logs(session, block_hex)
                                     for log in logs:
                                         await self._process_log(log, session)
 
                         except asyncio.TimeoutError:
-                            await ws.send(json.dumps({"jsonrpc":"2.0","method":"net_version","params":[],"id":99}))
+                            await ws.send(json.dumps(
+                                {"jsonrpc": "2.0", "method": "net_version",
+                                 "params": [], "id": 99}
+                            ))
                         except Exception as e:
-                            print(f"[Monitor] Loop error: {e}")
+                            print(f"[Monitor:{self.chain}] Loop error: {e}")
                             break
 
             except Exception as e:
-                print(f"[Monitor] Connection error: {e}")
+                print(f"[Monitor:{self.chain}] Connection error: {e}")
                 self.running = False
 
     def stop(self):
         self.running = False
+
+
+class LiveMonitor:
+    """
+    Aggregator that runs ChainMonitor instances for ETH and Base concurrently.
+    Backward-compatible: existing code calls monitor.start() and gets both chains.
+    """
+
+    def __init__(self, store, on_signal):
+        self.store     = store
+        self.on_signal = on_signal
+        self._monitors = []
+
+    async def start(self):
+        monitors = []
+
+        if ALCHEMY_ETH_WS and ALCHEMY_ETH_HTTP:
+            monitors.append(ChainMonitor(
+                chain    = "ethereum",
+                ws_url   = ALCHEMY_ETH_WS,
+                http_url = ALCHEMY_ETH_HTTP,
+                store    = self.store,
+                on_signal= self.on_signal,
+            ))
+
+        if ALCHEMY_BASE_WS and ALCHEMY_BASE_HTTP:
+            monitors.append(ChainMonitor(
+                chain    = "base",
+                ws_url   = ALCHEMY_BASE_WS,
+                http_url = ALCHEMY_BASE_HTTP,
+                store    = self.store,
+                on_signal= self.on_signal,
+            ))
+
+        if not monitors:
+            print("[Monitor] No chain endpoints configured — live monitor inactive")
+            return
+
+        self._monitors = monitors
+        print(f"[Monitor] Starting {len(monitors)} chain monitor(s): "
+              f"{[m.chain for m in monitors]}")
+
+        # Run all chain monitors concurrently
+        await asyncio.gather(*[m.start() for m in monitors])
+
+    def stop(self):
+        for m in self._monitors:
+            m.stop()

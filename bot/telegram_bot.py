@@ -1,8 +1,5 @@
 """
-bot/telegram_bot.py
-────────────────────
-Staged Telegram alerts. All f-string expressions pre-computed as variables
-to stay compatible with Python 3.11 (no backslashes inside f-strings).
+bot/telegram_bot.py  (v2 — ETH + Base chain labels in alerts)
 """
 
 import os
@@ -12,12 +9,15 @@ from datetime import datetime
 MIN_ALERT = os.getenv("MIN_CONFIDENCE_TO_ALERT", "medium")
 ORDER     = {"low": 0, "medium": 1, "high": 2}
 
+CHAIN_LABEL = {
+    "ethereum": "ETH",
+    "base":     "BASE",
+}
+
 
 def _conf_label(conf: float) -> str:
-    if conf >= 0.8:
-        return "high"
-    if conf >= 0.5:
-        return "medium"
+    if conf >= 0.8: return "high"
+    if conf >= 0.5: return "medium"
     return "low"
 
 
@@ -40,6 +40,10 @@ def _fp_lines(fp: dict) -> str:
     mpf = fp.get("max_priority_fee", 0)
     mf  = fp.get("max_fee", 0)
     return f"Gas Limit: {gl:,}\nMax Priority: {mpf} Gwei\nMax Fee: {mf} Gwei"
+
+
+def _chain_tag(chain: str) -> str:
+    return CHAIN_LABEL.get(chain, chain.upper())
 
 
 class TelegramAlerter:
@@ -68,8 +72,6 @@ class TelegramAlerter:
             print(f"[Bot] Error: {e}")
             return False
 
-    # ── Main router ───────────────────────────────────────────────────────────
-
     def send_staged_signal(self, signal) -> bool:
         conf_label = _conf_label(signal.confidence)
         if ORDER.get(conf_label, 0) < ORDER.get(MIN_ALERT, 1):
@@ -82,11 +84,10 @@ class TelegramAlerter:
             return self._send(self._fmt_cex(signal))
         return self._send(self._fmt_generic(signal))
 
-    # ── Stage 1: HUB BROADCAST ────────────────────────────────────────────────
-
     def _fmt_hub(self, s) -> str:
         extra      = s.extra or {}
         conf       = s.confidence
+        chain      = _chain_tag(getattr(s, "chain", "ethereum"))
         hub        = _sh(s.hub_address)
         tx         = _sh(s.tx_hash)
         block      = s.block_number
@@ -97,10 +98,10 @@ class TelegramAlerter:
 
         return (
             f"URGENT S1_HUB_BROADCAST\n"
-            f"BEARISH | conf {conf:.2f}\n\n"
+            f"BEARISH | conf {conf:.2f} | chain {chain}\n\n"
             f"FROM HUB:\n{hub}\n\n"
             f"TO TRIO:\n{trio_lines}\n\n"
-            f"CHAIN ETH | block {block}\n\n"
+            f"CHAIN {chain} | block {block}\n\n"
             f"Signal:\n"
             f"HUB seeded TRIO - Pre-dump staging.\n"
             f"Empirical median lead time to price trough: 12.6h\n\n"
@@ -110,11 +111,10 @@ class TelegramAlerter:
             f"TX: {tx}"
         )
 
-    # ── Stage 2: FANOUT CONFIRMED ─────────────────────────────────────────────
-
     def _fmt_fanout(self, s) -> str:
         extra      = s.extra or {}
         conf       = s.confidence
+        chain      = _chain_tag(getattr(s, "chain", "ethereum"))
         elapsed    = extra.get("elapsed_s", 0)
         tx         = _sh(s.tx_hash)
         block      = s.block_number
@@ -126,9 +126,9 @@ class TelegramAlerter:
 
         return (
             f"URGENT S1_FANOUT_CONFIRMED\n"
-            f"BEARISH | conf {conf:.2f}\n\n"
+            f"BEARISH | conf {conf:.2f} | chain {chain}\n\n"
             f"FROM TRIO:\n{trio_lines}\n\n"
-            f"CHAIN ETH | block {block}\n\n"
+            f"CHAIN {chain} | block {block}\n\n"
             f"Signal:\n"
             f"S1 fan-out confirmed: {elapsed}s after broadcast.\n"
             f"Coordinated multi-wallet sweep - not human behaviour.\n\n"
@@ -138,11 +138,10 @@ class TelegramAlerter:
             f"TX: {tx}"
         )
 
-    # ── Stage 3: CEX DEPOSIT ──────────────────────────────────────────────────
-
     def _fmt_cex(self, s) -> str:
         extra  = s.extra or {}
         conf   = s.confidence
+        chain  = _chain_tag(getattr(s, "chain", "ethereum"))
         wallet = _sh(s.hub_address)
         cex    = extra.get("cex_name", "Unknown").upper()
         sym    = s.token_symbol
@@ -151,21 +150,19 @@ class TelegramAlerter:
 
         return (
             f"URGENT CEX_DEPOSIT_DETECTED\n"
-            f"BEARISH | conf {conf:.2f}\n\n"
+            f"BEARISH | conf {conf:.2f} | chain {chain}\n\n"
             f"Wallet: {wallet}\n"
             f"CEX: {cex}\n\n"
-            f"Token: ${sym} | Block: {block}\n\n"
+            f"Token: ${sym} | Chain: {chain} | Block: {block}\n\n"
             f"TRIO wallet deposited to CEX. Dump imminent.\n\n"
             f"SHORT WINDOW CLOSING\n\n"
             f"TX: {tx}"
         )
 
-    # ── Generic fallback ──────────────────────────────────────────────────────
-
     def _fmt_generic(self, s) -> str:
         conf   = s.confidence
         label  = _conf_label(conf)
-        emoji  = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(label, "")
+        chain  = _chain_tag(getattr(s, "chain", "ethereum"))
         sym    = s.token_symbol
         stage  = s.stage
         hub    = _sh(s.hub_address)
@@ -174,15 +171,13 @@ class TelegramAlerter:
         rules  = _rules((s.extra or {}).get("matched_rules", []))
 
         return (
-            f"{emoji} SIGNAL - ${sym}\n"
+            f"SIGNAL - ${sym} [{chain}]\n"
             f"Stage: {stage} | conf {conf:.2f}\n\n"
             f"From: {hub}\n\n"
             f"Gas Fingerprint:\n{fp}\n\n"
             f"Rules:\n{rules}\n\n"
             f"TX: {tx}"
         )
-
-    # ── System messages ───────────────────────────────────────────────────────
 
     def send_scan_complete(self, tokens_flagged: int, wallets_added: int):
         ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
@@ -191,19 +186,20 @@ class TelegramAlerter:
             f"Tokens flagged: {tokens_flagged}\n"
             f"Wallets added: {wallets_added}\n"
             f"{ts}\n"
-            f"Monitoring all identified wallets live."
+            f"Monitoring all identified wallets live (ETH + Base)."
         )
 
     def send_new_cluster(self, cluster: dict):
         fp      = cluster.get("fingerprint", {})
         sym     = cluster.get("symbol", "?")
+        chain   = _chain_tag(cluster.get("chain", "ethereum"))
         count   = cluster.get("wallet_count", 0)
         score   = cluster.get("score", 0)
         label   = cluster.get("label", "")
         fp_text = _fp_lines(fp)
         self._send(
             f"New Wallet Cluster Discovered\n"
-            f"Token: ${sym}\n"
+            f"Token: ${sym} [{chain}]\n"
             f"Wallets: {count} | Score: {score}/100\n"
             f"Label: {label}\n\n"
             f"Shared Fingerprint:\n{fp_text}\n\n"
@@ -212,8 +208,10 @@ class TelegramAlerter:
 
     def send_startup(self, watchlist_size: int, tokens_tracked: int):
         self._send(
-            f"OnChain Sentinel v2 - ONLINE\n"
+            f"OnChain Sentinel v3 - ONLINE\n"
             f"Mode: Fully Autonomous\n"
+            f"Chains: Ethereum + Base\n"
+            f"Cap filter: <$20M market cap\n"
             f"Tokens tracked: {tokens_tracked}\n"
             f"Wallets on watchlist: {watchlist_size}\n\n"
             f"Staged alerts active:\n"
