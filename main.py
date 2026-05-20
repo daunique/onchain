@@ -116,10 +116,12 @@ def run_scan_cycle():
 
 # ── Catchup ───────────────────────────────────────────────────────────────────
 
+DONE_STATUSES = {"complete", "no_transfers", "skipped"}
+
 def run_catchup():
     incomplete = [
         addr for addr, info in list(store.tokens.items())
-        if info.get("flagged") and info.get("analysis_status") != "complete"
+        if info.get("flagged") and info.get("analysis_status") not in DONE_STATUSES
     ]
     if incomplete:
         print(f"[Catchup] {len(incomplete)} token(s) need analysis")

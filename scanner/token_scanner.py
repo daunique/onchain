@@ -173,6 +173,8 @@ def _from_dexscreener_boosts() -> list[dict]:
 
         best    = max(chain_pairs,
                       key=lambda p: float((p.get("liquidity") or {}).get("usd", 0) or 0))
+        # Use real token symbol from pair data, not the boost description field
+        real_sym = (best.get("baseToken") or {}).get("symbol", item["symbol"])
         liq     = float((best.get("liquidity") or {}).get("usd", 0) or 0)
         vol     = float((best.get("volume")    or {}).get("h24", 0) or 0)
         changes = best.get("priceChange") or {}
@@ -193,7 +195,7 @@ def _from_dexscreener_boosts() -> list[dict]:
 
         results.append({
             "address":    addr,
-            "symbol":     item["symbol"],
+            "symbol":     real_sym,
             "chain":      chain,
             "source":     "ds_boost",
             "market_cap": cap,
