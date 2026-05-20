@@ -20,8 +20,8 @@ import requests
 from datetime import datetime, timedelta
 
 # Thresholds for "this token is CEX-listed"
-MIN_LIQUIDITY_USD = float(500_000)   # $500K liquidity
-MIN_VOLUME_24H    = float(200_000)   # $200K 24h volume
+MIN_LIQUIDITY_USD = float(100_000)   # $500K liquidity
+MIN_VOLUME_24H    = float(50_000)   # $200K 24h volume
 
 DS_TOKEN_PAIRS = "https://api.dexscreener.com/latest/dex/tokens/"
 
